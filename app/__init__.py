@@ -1,1 +1,1 @@
-"""Version v1.1 categorized workouts."""
+"""Version v1.2 adds plan & diet endpoints."""
