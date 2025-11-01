@@ -7,7 +7,7 @@ workouts_by_cat = {"Warm-up": [], "Workout": [], "Cool-down": []}
 
 @app.route('/health')
 def health():
-    return jsonify(status='ok', version='v1.2.2')
+    return jsonify(status='ok', version='v1.2.3')
 
 @app.route('/api/workout', methods=['POST'])
 def add_workout():
@@ -46,5 +46,10 @@ def progress():
     totals = {cat: sum(w.duration for w in entries) for cat, entries in workouts_by_cat.items()}
     return jsonify({"categories": list(totals.keys()), "values": list(totals.values())})
 
+@app.route('/api/lifetime', methods=['GET'])
+def lifetime():
+    total = sum(w.duration for entries in workouts_by_cat.values() for w in entries)
+    return jsonify(total_minutes=total)
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5004)
+    app.run(host='0.0.0.0', port=5005)
