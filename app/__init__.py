@@ -1,1 +1,1 @@
-"""Version v1.2 adds plan & diet endpoints."""
+"""Version v1.2.1 adds progress endpoint."""

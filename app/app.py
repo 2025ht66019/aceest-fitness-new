@@ -5,20 +5,9 @@ app = Flask(__name__)
 
 workouts_by_cat = {"Warm-up": [], "Workout": [], "Cool-down": []}
 
-RECOMMENDED_PLAN = {
-    "Warm-up": ["5 min Jog", "Jumping Jacks"],
-    "Workout": ["Push-ups", "Squats"],
-    "Cool-down": ["Stretch", "Breathing"]
-}
-DIET_GUIDE = {
-    "Weight Loss": ["Oatmeal", "Grilled Chicken"],
-    "Muscle Gain": ["Egg Omelet", "Protein Shake"],
-    "Endurance": ["Banana", "Whole Grain Pasta"]
-}
-
 @app.route('/health')
 def health():
-    return jsonify(status='ok', version='v1.2')
+    return jsonify(status='ok', version='v1.2.1')
 
 @app.route('/api/workout', methods=['POST'])
 def add_workout():
@@ -52,18 +41,10 @@ def list_workouts():
         ] for cat, entries in workouts_by_cat.items()
     })
 
-@app.route('/api/summary', methods=['GET'])
-def summary():
+@app.route('/api/progress', methods=['GET'])
+def progress():
     totals = {cat: sum(w.duration for w in entries) for cat, entries in workouts_by_cat.items()}
-    return jsonify(totals)
-
-@app.route('/api/plan', methods=['GET'])
-def plan():
-    return jsonify(RECOMMENDED_PLAN)
-
-@app.route('/api/diet', methods=['GET'])
-def diet():
-    return jsonify(DIET_GUIDE)
+    return jsonify({"categories": list(totals.keys()), "values": list(totals.values())})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5002)
+    app.run(host='0.0.0.0', port=5003)
