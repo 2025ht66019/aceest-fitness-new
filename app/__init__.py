@@ -1,1 +1,1 @@
-"""Version v1.3 adds user, calories, report."""
+"""Version v1.4 adds daily aggregation."""
