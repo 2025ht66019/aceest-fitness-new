@@ -1,13 +1,31 @@
 from flask import Flask, request, jsonify
-from aceest_core.models import WorkoutEntry
+from aceest_core.models import WorkoutEntry, User
+from aceest_core.calculations import calculate_bmi, calculate_bmr, calculate_calories
+from aceest_core.report import export_pdf
+from datetime import datetime
 
 app = Flask(__name__)
 
 workouts_by_cat = {"Warm-up": [], "Workout": [], "Cool-down": []}
+user_info: dict | None = None
 
 @app.route('/health')
 def health():
-    return jsonify(status='ok', version='v1.2.3')
+    return jsonify(status='ok', version='v1.3')
+
+@app.route('/api/user', methods=['POST'])
+def save_user():
+    global user_info
+    data = request.get_json(force=True)
+    try:
+        name = data['name']; regn_id = data['regn_id']; age = int(data['age']); gender = data['gender'].upper()
+        height_cm = float(data['height_cm']); weight_kg = float(data['weight_kg'])
+        bmi = calculate_bmi(weight_kg, height_cm); bmr = calculate_bmr(weight_kg, height_cm, age, gender)
+        user = User(name, regn_id, age, gender, height_cm, weight_kg, bmi, bmr)
+        user_info = user.__dict__
+        return jsonify(message='saved', bmi=round(bmi,1), bmr=round(bmr,0))
+    except Exception as e:
+        return jsonify(error=str(e)), 400
 
 @app.route('/api/workout', methods=['POST'])
 def add_workout():
@@ -25,9 +43,11 @@ def add_workout():
             raise ValueError
     except ValueError:
         return jsonify(error='duration must be positive int'), 400
-    entry = WorkoutEntry(category=category, exercise=exercise, duration=duration)
+    weight = user_info.get('weight_kg', 70) if user_info else 70
+    calories = calculate_calories(category, duration, weight)
+    entry = WorkoutEntry(category=category, exercise=exercise, duration=duration, calories=calories)
     workouts_by_cat[category].append(entry)
-    return jsonify(message='added', category=category, exercise=exercise, duration=duration)
+    return jsonify(message='added', category=category, exercise=exercise, duration=duration, calories=round(calories,1))
 
 @app.route('/api/workouts', methods=['GET'])
 def list_workouts():
@@ -36,6 +56,7 @@ def list_workouts():
             {
                 'exercise': w.exercise,
                 'duration': w.duration,
+                'calories': w.calories,
                 'timestamp': w.timestamp.isoformat()
             } for w in entries
         ] for cat, entries in workouts_by_cat.items()
@@ -46,10 +67,12 @@ def progress():
     totals = {cat: sum(w.duration for w in entries) for cat, entries in workouts_by_cat.items()}
     return jsonify({"categories": list(totals.keys()), "values": list(totals.values())})
 
-@app.route('/api/lifetime', methods=['GET'])
-def lifetime():
-    total = sum(w.duration for entries in workouts_by_cat.values() for w in entries)
-    return jsonify(total_minutes=total)
+@app.route('/api/report', methods=['GET'])
+def report():
+    if not user_info:
+        return jsonify(error='user info not saved'), 400
+    filename = export_pdf(user_info, workouts_by_cat)
+    return jsonify(filename=filename)
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5005)
+    app.run(host='0.0.0.0', port=5006)

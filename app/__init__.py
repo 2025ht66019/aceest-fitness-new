@@ -1,1 +1,1 @@
-"""Version v1.2.3 adds lifetime endpoint."""
+"""Version v1.3 adds user, calories, report."""
