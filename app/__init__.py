@@ -1,1 +1,1 @@
-"""Version v1.0 baseline."""
+"""Version v1.1 categorized workouts."""
