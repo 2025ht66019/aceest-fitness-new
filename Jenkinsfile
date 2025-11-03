@@ -115,12 +115,12 @@ pipeline {
           // Expect Jenkins to have Docker Hub credentials configured with id 'dockerhub-creds'
           withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
             sh 'echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin'
+            sh "docker push ${env.DOCKER_IMAGE_COMMIT}"
             sh "docker push ${env.DOCKER_IMAGE_LATEST}"
           }
         }
       }
     }
-
     stage('Deploy to Minikube') {
       when {
         expression { return env.DOCKER_IMAGE_LATEST }
