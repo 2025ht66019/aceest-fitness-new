@@ -333,6 +333,88 @@ Potential enhancements:
 - Add Slack notifications on failure/success.
 - Add performance test stage using Locust.
 
+## Docker Image Publishing (Jenkins)
+
+The pipeline now builds and publishes a Docker image to Docker Hub after passing tests and the SonarQube Quality Gate.
+
+### Image Tags
+
+- `latest` – Always points to the most recent successful build on the default branch.
+- `<short-sha>` – 8-character Git commit identifier for immutable deployments.
+
+Example pushed images:
+
+```
+2025ht66019/aceest_fitness:latest
+2025ht66019/aceest_fitness:3fa92c1d
+```
+
+### Using the Image Locally
+
+```bash
+docker pull 2025ht66019/aceest_fitness:latest
+docker run -p 5000:5000 2025ht66019/aceest_fitness:latest
+```
+
+### Updating Credentials in Jenkins
+
+1. Navigate to Jenkins > Manage Jenkins > Credentials.
+2. Add a credential of type Username/Password with your Docker Hub username and a personal access token/password.
+3. Set the ID to `dockerhub-creds` (or adjust in `Jenkinsfile`).
+
+### Forcing a Rebuild
+
+If dependencies changed but Docker layer cache is stuck, run a build with the option `--no-cache` locally or temporarily modify the pipeline to add:
+
+```groovy
+sh "docker build --no-cache -t ${tagCommit} -t ${tagLatest} ."
+```
+
+### Verifying Push
+
+After a successful pipeline run, confirm image availability:
+
+```bash
+curl -s https://hub.docker.com/v2/repositories/2025ht66019/aceest_fitness/tags/ | jq '.results[].name'
+```
+
+Or simply pull the commit tag:
+
+```bash
+docker pull 2025ht66019/aceest_fitness:<short-sha>
+```
+
+### Deployment Example (Kubernetes)
+
+```yaml
+containers:
+  - name: aceest-fitness
+    image: 2025ht66019/aceest_fitness:latest
+    ports:
+      - containerPort: 5000
+```
+
+Use the commit tag for rollbacks:
+
+```yaml
+image: 2025ht66019/aceest_fitness:3fa92c1d
+```
+
+### Security Scanning (Optional Next Step)
+
+Add a stage with Trivy:
+
+```groovy
+stage('Trivy Scan') {
+  steps {
+    sh 'trivy image --exit-code 0 --severity HIGH,CRITICAL ${env.DOCKER_IMAGE_COMMIT}'
+  }
+}
+```
+
+---
+The Docker build/push occurs only after a successful test and (if applicable) SonarQube Quality Gate pass, ensuring only high-quality images reach the registry.
+
 ---
 
 For any CI/CD related issues, inspect Jenkins build logs with timestamps and color enabled (already configured in pipeline options).

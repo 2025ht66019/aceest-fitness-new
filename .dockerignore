@@ -1,0 +1,27 @@
+# Ignore Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.env/
+
+# Git
+.git
+.gitignore
+
+# Test & coverage artifacts
+coverage.xml
+pytest-results.xml
+
+# IDE/editor
+.vscode/
+*.swp
+
+# Jenkins workspace files (if any copied)
+*/target/
+
+# Local OS files
+.DS_Store

@@ -85,6 +85,43 @@ pipeline {
         }
       }
     }
+
+    stage('Docker Build') {
+      when {
+        expression { return currentBuild.currentResult == 'SUCCESS' }
+      }
+      agent { label 'docker' }
+      steps {
+        script {
+          // Define image name and tags
+          def repo = '2025ht66019/aceest_fitness'
+          def shortSha = sh(returnStdout: true, script: 'git rev-parse --short=8 HEAD').trim()
+          def tagCommit = "${repo}:${shortSha}"
+          def tagLatest = "${repo}:latest"
+          echo "Building Docker image ${tagCommit} and tagging latest"
+          sh "docker build -t ${tagCommit} -t ${tagLatest} ."
+          // Stash tags for next stage
+          env.DOCKER_IMAGE_COMMIT = tagCommit
+          env.DOCKER_IMAGE_LATEST = tagLatest
+        }
+      }
+    }
+
+    stage('Docker Push') {
+      when {
+        expression { return env.DOCKER_IMAGE_COMMIT }
+      }
+      steps {
+        script {
+          // Expect Jenkins to have Docker Hub credentials configured with id 'dockerhub-creds'
+          withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+            sh 'echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin'
+            sh "docker push ${env.DOCKER_IMAGE_COMMIT}"
+            sh "docker push ${env.DOCKER_IMAGE_LATEST}"
+          }
+        }
+      }
+    }
   }
 
   post {
