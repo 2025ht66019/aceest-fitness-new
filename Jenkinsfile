@@ -90,7 +90,6 @@ pipeline {
       when {
         expression { return currentBuild.currentResult == 'SUCCESS' }
       }
-      agent { label 'docker' }
       steps {
         script {
           // Define image name and tags

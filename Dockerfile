@@ -16,7 +16,7 @@ COPY requirements.txt ./
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 # Copy application source
-COPY ./app/
+COPY app/ ./app/
 
 # Switch to non-root
 USER appuser
