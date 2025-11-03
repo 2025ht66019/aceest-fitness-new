@@ -1,15 +1,9 @@
 pipeline {
   agent any
 
-  environment {
-    // SONAR_HOST_URL and SONAR_TOKEN should be configured in Jenkins global config or as credentials
-    // Example: Manage Jenkins > Configure System > SonarQube servers
-    // SONARQUBE_ENV = 'SonarQubeServerName'
-  }
-
+  // Global options (no empty environment blocks allowed)
   options {
     timestamps()
-    ansiColor('xterm')
   }
 
   stages {
@@ -46,13 +40,13 @@ pipeline {
     }
 
     stage('SonarQube Scan') {
-      environment {
-        // Ensure you have configured SonarQube server in Jenkins and name matches below
-        // SONARQUBE_ENV = 'SonarQubeServerName'
-      }
       steps {
-        withSonarQubeEnv('SonarQubeServerName') {
-          sh '. venv/bin/activate && sonar-scanner -Dsonar.projectKey=aceest-fitness'
+        // Wrap output in ANSI color if plugin installed
+        wrap([$class: 'AnsiColorBuildWrapper', colorMapName: 'xterm']) {
+          withSonarQubeEnv('SonarQubeServerName') {
+            // Use configuration from sonar-project.properties; pass coverage already generated
+            sh '. venv/bin/activate && sonar-scanner'
+          }
         }
       }
     }
@@ -75,8 +69,14 @@ pipeline {
     success {
       echo 'Pipeline completed successfully.'
     }
+    unstable {
+      echo 'Pipeline marked unstable (possibly failed quality gate).'
+    }
     failure {
       echo 'Pipeline failed.'
+    }
+    always {
+      echo 'Build finished.'
     }
   }
 }
