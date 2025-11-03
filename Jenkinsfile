@@ -128,24 +128,33 @@ pipeline {
       steps {
         script {
           sh '''
+            set -e
             echo "Validating kubectl and minikube availability..."
-            if ! command -v kubectl >/dev/null 2>&1; then
-              echo "kubectl not found in PATH"; exit 1; fi
-            if ! command -v minikube >/dev/null 2>&1; then
-              echo "minikube not found in PATH"; exit 1; fi
+            command -v kubectl >/dev/null || { echo "kubectl not found"; exit 1; }
+            command -v minikube >/dev/null || { echo "minikube not found"; exit 1; }
             echo "Ensuring minikube running..."
             if ! minikube status >/dev/null 2>&1; then
-              echo "Starting minikube..."
-              minikube start --memory=2048 --cpus=2 || { echo "Failed to start minikube"; exit 1; }
+              minikube start --memory=2048 --cpus=2
             fi
-            echo "Deploying commit image tag..."
+
             COMMIT_TAG="${DOCKER_IMAGE_COMMIT##*:}"
-            echo "Commit short SHA is $COMMIT_TAG"
-            echo "Substituting IMAGE_TAG in manifest to $COMMIT_TAG"
-            sed "s/\${IMAGE_TAG}/$COMMIT_TAG/" k8s/aceest-fitness.yaml | kubectl apply -f -
-            echo "Applying Kubernetes manifests..."
+            echo "Deploying image tag: $COMMIT_TAG"
+
+            # Verify placeholder exists
+            if ! grep -q '\\${IMAGE_TAG}' k8s/aceest-fitness.yaml; then
+              echo "Placeholder \\${IMAGE_TAG} not found in k8s/aceest-fitness.yaml"
+              exit 1
+            fi
+
+            # Substitute placeholder and apply
+            sed -e "s|\\${IMAGE_TAG}|${COMMIT_TAG}|g" k8s/aceest-fitness.yaml | kubectl apply -f -
+
             echo "Waiting for rollout..."
             kubectl rollout status deployment/aceest-fitness --timeout=180s
+
+            echo "Current deployed image:"
+            kubectl get deploy aceest-fitness -o jsonpath='{.spec.template.spec.containers[0].image}'; echo
+
             echo "Service URL(s):"
             minikube service aceest-fitness --url || true
           '''
