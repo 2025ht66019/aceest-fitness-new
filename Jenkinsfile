@@ -43,7 +43,7 @@ pipeline {
       steps {
         // Wrap output in ANSI color if plugin installed
         wrap([$class: 'AnsiColorBuildWrapper', colorMapName: 'xterm']) {
-          withSonarQubeEnv('SonarQubeServerName') {
+          withSonarQubeEnv('SonarQubeServer') {
             // Use configuration from sonar-project.properties; pass coverage already generated
             sh '. venv/bin/activate && sonar-scanner'
           }
