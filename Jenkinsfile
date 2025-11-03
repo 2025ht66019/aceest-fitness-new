@@ -156,7 +156,9 @@ pipeline {
             kubectl get deploy aceest-fitness -o jsonpath='{.spec.template.spec.containers[0].image}'; echo
 
             echo "Service URL(s):"
-            minikube service aceest-fitness --url || true
+            NODE_IP=$(minikube ip)
+            NODE_PORT=$(kubectl get svc aceest-fitness -o jsonpath='{.spec.ports[0].nodePort}')
+            echo "http://${NODE_IP}:${NODE_PORT}"
           '''
         }
       }
