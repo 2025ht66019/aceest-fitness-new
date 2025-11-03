@@ -138,8 +138,12 @@ pipeline {
               echo "Starting minikube..."
               minikube start --memory=2048 --cpus=2 || { echo "Failed to start minikube"; exit 1; }
             fi
+            echo "Deploying commit image tag..."
+            COMMIT_TAG="${DOCKER_IMAGE_COMMIT##*:}"
+            echo "Commit short SHA is $COMMIT_TAG"
+            echo "Substituting IMAGE_TAG in manifest to $COMMIT_TAG"
+            sed "s/\${IMAGE_TAG}/$COMMIT_TAG/" k8s/aceest-fitness.yaml | kubectl apply -f -
             echo "Applying Kubernetes manifests..."
-            kubectl apply -f k8s/aceest-fitness.yaml
             echo "Waiting for rollout..."
             kubectl rollout status deployment/aceest-fitness --timeout=180s
             echo "Service URL(s):"

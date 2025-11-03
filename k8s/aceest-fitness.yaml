@@ -22,7 +22,6 @@ spec:
         fsGroup: 1000
       containers:
         - name: aceest-fitness
-          # Use an immutable tag (replace <commit> with actual pushed commit tag) for deterministic deploys
           image: 2025ht66019/aceest_fitness:${IMAGE_TAG}
           imagePullPolicy: Always
           ports:
@@ -43,9 +42,11 @@ spec:
             requests:
               cpu: 50m
               memory: 64Mi
+              ephemeral-storage: 64Mi
             limits:
               cpu: 250m
               memory: 256Mi
+              ephemeral-storage: 256Mi
 ---
 apiVersion: v1
 kind: Service
