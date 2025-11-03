@@ -115,9 +115,36 @@ pipeline {
           // Expect Jenkins to have Docker Hub credentials configured with id 'dockerhub-creds'
           withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
             sh 'echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin'
-            sh "docker push ${env.DOCKER_IMAGE_COMMIT}"
             sh "docker push ${env.DOCKER_IMAGE_LATEST}"
           }
+        }
+      }
+    }
+
+    stage('Deploy to Minikube') {
+      when {
+        expression { return env.DOCKER_IMAGE_LATEST }
+      }
+      steps {
+        script {
+          sh '''
+            echo "Validating kubectl and minikube availability..."
+            if ! command -v kubectl >/dev/null 2>&1; then
+              echo "kubectl not found in PATH"; exit 1; fi
+            if ! command -v minikube >/dev/null 2>&1; then
+              echo "minikube not found in PATH"; exit 1; fi
+            echo "Ensuring minikube running..."
+            if ! minikube status >/dev/null 2>&1; then
+              echo "Starting minikube..."
+              minikube start --memory=2048 --cpus=2 || { echo "Failed to start minikube"; exit 1; }
+            fi
+            echo "Applying Kubernetes manifests..."
+            kubectl apply -f k8s/aceest-fitness.yaml
+            echo "Waiting for rollout..."
+            kubectl rollout status deployment/aceest-fitness --timeout=180s
+            echo "Service URL(s):"
+            minikube service aceest-fitness --url || true
+          '''
         }
       }
     }
