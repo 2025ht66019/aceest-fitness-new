@@ -25,4 +25,4 @@ USER appuser
 EXPOSE 5000
 
 # Default command to run the Flask app
-CMD ["python", "app/app.py"]
+CMD ["python", "app.py"]
