@@ -127,6 +127,7 @@ pipeline {
       }
       steps {
         script {
+          try {
           sh '''
             set -e
             echo "Validating kubectl and minikube availability..."
@@ -161,13 +162,14 @@ pipeline {
             echo "http://${NODE_IP}:${NODE_PORT}"
             echo "minikube service aceest-fitness --url"
           '''
-        } catch (err) {
+         } catch (err) {
           echo "Deployment failed! Rolling back..."
           sh '''
             kubectl rollout undo deployment/aceest-fitness-canary
           '''
           error "Rollback executed due to deployment failure."
         }
+       } 
       }
     }
   }
