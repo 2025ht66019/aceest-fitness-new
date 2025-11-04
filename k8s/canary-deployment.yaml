@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aceest-fitness-stable
+  labels:
+    app: aceest-fitness
+    track: stable
+spec:
+  replicas: 4
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: aceest-fitness
+      track: stable
+  template:
+    metadata:
+      labels:
+        app: aceest-fitness
+        track: stable
+        version: v1
+    spec:
+      # Disable default service account token automount for least privilege
+      automountServiceAccountToken: false
+      # Explicit non-root security context (container also runs as non-root)
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: web
+          image: 2025ht66019/aceest_fitness:v1
+          ports:
+            - containerPort: 5000
+          readinessProbe:
+            httpGet: { path: /, port: 5000 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /, port: 5000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 64Mi, ephemeral-storage: 64Mi }
+            limits: { cpu: 250m, memory: 256Mi, ephemeral-storage: 256Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aceest-fitness-canary
+  labels:
+    app: aceest-fitness
+    track: canary
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: aceest-fitness
+      track: canary
+  template:
+    metadata:
+      labels:
+        app: aceest-fitness
+        track: canary
+        version: v2
+    spec:
+      # Disable default service account token automount for least privilege
+      automountServiceAccountToken: false
+      # Explicit non-root security context (container also runs as non-root)
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: web
+          image: 2025ht66019/aceest_fitness:${IMAGE_TAG}
+          ports:
+            - containerPort: 5000
+          readinessProbe:
+            httpGet: { path: /, port: 5000 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /, port: 5000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 64Mi, ephemeral-storage: 64Mi }
+            limits: { cpu: 250m, memory: 256Mi, ephemeral-storage: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aceest-fitness
+  labels:
+    app: aceest-fitness
+spec:
+  selector:
+    app: aceest-fitness
+  ports:
+    - port: 5000
+      targetPort: 5000
+  type: NodePort

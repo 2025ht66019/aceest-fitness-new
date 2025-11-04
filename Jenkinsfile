@@ -127,6 +127,7 @@ pipeline {
       }
       steps {
         script {
+          try {
           sh '''
             set -e
             echo "Validating kubectl and minikube availability..."
@@ -141,13 +142,13 @@ pipeline {
             echo "Deploying image tag: $COMMIT_TAG"
 
             # Verify placeholder exists
-            if ! grep -q '\\${IMAGE_TAG}' k8s/rolling-update.yaml; then
-              echo "Placeholder \\${IMAGE_TAG} not found in k8s/rolling-update.yaml"
+            if ! grep -q '\\${IMAGE_TAG}' k8s/canary-deployment.yaml; then
+              echo "Placeholder \\${IMAGE_TAG} not found in k8s/canary-deployment.yaml"
               exit 1
             fi
 
             # Substitute placeholder and apply
-            sed -e "s|\\${IMAGE_TAG}|${COMMIT_TAG}|g" k8s/rolling-update.yaml | kubectl apply -f -
+            sed -e "s|\\${IMAGE_TAG}|${COMMIT_TAG}|g" k8s/canary-deployment.yaml | kubectl apply -f -
 
             echo "Waiting for rollout..."
             kubectl rollout status deployment/aceest-fitness --timeout=180s
@@ -161,7 +162,14 @@ pipeline {
             echo "http://${NODE_IP}:${NODE_PORT}"
             echo "minikube service aceest-fitness --url"
           '''
+         } catch (err) {
+          echo "Deployment failed! Rolling back..."
+          sh '''
+            kubectl rollout undo deployment/aceest-fitness-canary
+          '''
+          error "Rollback executed due to deployment failure."
         }
+       } 
       }
     }
   }
