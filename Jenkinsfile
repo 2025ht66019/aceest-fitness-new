@@ -153,7 +153,8 @@ pipeline {
             [System.IO.File]::WriteAllText($pwFile, $Env:DOCKER_PASS)
 
             # Ensure previous credentials are cleared (helps avoid cached auth confusion)
-            docker logout 2>$null || Write-Host "docker logout returned non-zero (ignored)"
+            docker logout 2>$null
+            if ($LASTEXITCODE -ne 0) { Write-Host "docker logout returned non-zero (ignored)" }
 
             try {
               $loginOutput = Get-Content $pwFile | docker login --username $Env:DOCKER_USER --password-stdin 2>&1
