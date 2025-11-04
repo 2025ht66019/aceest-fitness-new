@@ -29,7 +29,7 @@ pipeline {
 
     stage('Pytest with Coverage') {
       steps {
-        sh '. venv/bin/activate && pytest -v --cov=. --cov-report xml --junitxml=pytest-results.xml'
+        sh 'export PYTHONPATH=$PWD && . venv/bin/activate && pytest -v --cov=. --cov-report xml --junitxml=pytest-results.xml'
       }
       post {
         always {
