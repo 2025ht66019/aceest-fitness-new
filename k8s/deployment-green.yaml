@@ -30,17 +30,17 @@ spec:
           image: 2025ht66019/aceest_fitness:${IMAGE_TAG} # overwritten by Jenkins (commit tag)
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8000
+            - containerPort: 5000
           readinessProbe:
             httpGet:
               path: /
-              port: 8000
+              port: 5000
             initialDelaySeconds: 5
             periodSeconds: 5
           livenessProbe:
             httpGet:
               path: /
-              port: 8000
+              port: 5000
             initialDelaySeconds: 15
             periodSeconds: 15
           resources:
