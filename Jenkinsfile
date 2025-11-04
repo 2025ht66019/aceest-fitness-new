@@ -136,59 +136,21 @@ pipeline {
     }
 
     stage('Docker Push') {
-      steps {
-        withCredentials([usernamePassword(
-          credentialsId: 'dockerhub-creds',    // <-- your Jenkins creds ID
-          usernameVariable: 'DOCKER_USER',
-          passwordVariable: 'DOCKER_PASS'
-        )]) {
+    steps {
+      script {
+        docker.withRegistry('https://index.docker.io/v1/', 'dockerhub-creds') {
           powershell '''
-            $ErrorActionPreference = 'Stop'
+            $ErrorActionPreference = "Stop"
+            docker --version
 
-            Write-Host "Docker version: $(docker --version)"
-
-            # Use a temporary file to reliably pass the password to docker on PowerShell/Windows.
-            # Write the file without adding an extra newline and ensure any previous login is cleared.
-            $pwFile = Join-Path $env:WORKSPACE 'docker_password.txt'
-            [System.IO.File]::WriteAllText($pwFile, $Env:DOCKER_PASS)
-
-            # Ensure previous credentials are cleared (helps avoid cached auth confusion)
-            docker logout 2>$null
-            if ($LASTEXITCODE -ne 0) { Write-Host "docker logout returned non-zero (ignored)" }
-
-            try {
-              $loginOutput = Get-Content $pwFile | docker login --username $Env:DOCKER_USER --password-stdin 2>&1
-              if ($LASTEXITCODE -ne 0) {
-                Write-Host "docker login failed. Output:"; Write-Host $loginOutput
-                throw "docker login failed with exit code $LASTEXITCODE"
-              } else {
-                Write-Host "docker login succeeded"
-              }
-            } finally {
-              Remove-Item -Path $pwFile -Force -ErrorAction SilentlyContinue
-            }
-
-            # Push tags. Prefer the image variables set during the build stage if present.
-            if ($env:DOCKER_IMAGE_COMMIT) {
-              Write-Host "Pushing $env:DOCKER_IMAGE_COMMIT"
-              docker push $env:DOCKER_IMAGE_COMMIT
-            } else {
-              $commitTag = '2025ht66019/aceest_fitness:' + (git rev-parse --short=8 HEAD).Trim()
-              Write-Host "DOCKER_IMAGE_COMMIT missing; pushing $commitTag"
-              docker push $commitTag
-            }
-
-            if ($env:DOCKER_IMAGE_LATEST) {
-              Write-Host "Pushing $env:DOCKER_IMAGE_LATEST"
-              docker push $env:DOCKER_IMAGE_LATEST
-            } else {
-              Write-Host "Pushing default latest tag"
-              docker push 2025ht66019/aceest_fitness:latest
-            }
+            Write-Host "Pushing images to Docker Hub..."
+            docker push $Env:DOCKER_IMAGE_COMMIT
+            docker push $Env:DOCKER_IMAGE_LATEST
           '''
         }
       }
     }
+  }
 
     stage('Deploy to Minikube') {
       when { expression { return env.DOCKER_IMAGE_LATEST } }
