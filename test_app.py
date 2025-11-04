@@ -5,10 +5,10 @@ from app.app import app, workouts
 @pytest.fixture(autouse=True)
 def clear_workouts():
     # Reset global workouts before each test
-    for k in list(workouts.keys()):
+    for k in workouts.keys():
         workouts[k].clear()
     yield
-    for k in list(workouts.keys()):
+    for k in workouts.keys():
         workouts[k].clear()
 
 @pytest.fixture
