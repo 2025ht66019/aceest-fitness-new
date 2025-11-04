@@ -219,7 +219,7 @@ pipeline {
 
             # Inject new image (temporary rendered file)
             RENDERED="$(mktemp)"
-            sed "s|2025ht66019/aceest_fitness:latest|${IMAGE_FULL}|g" "$DEPLOY_FILE" > "$RENDERED"
+            sed "s|2025ht66019/aceest_fitness:latest|${IMAGE_TAG}|g" "$DEPLOY_FILE" > "$RENDERED"
 
             echo "Applying $IDLE_COLOR deployment..."
             kubectl apply -f "$RENDERED"
