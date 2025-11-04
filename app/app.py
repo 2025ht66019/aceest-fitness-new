@@ -1,193 +1,214 @@
-from flask import Flask, render_template_string, request, redirect, url_for
-from datetime import datetime
+from flask import Flask, render_template_string, request, redirect, url_for, send_file
+import io, datetime
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 from jinja2 import DictLoader
 
 app = Flask(__name__)
 
-# Register in-memory templates for inheritance
-BASE_HTML = """
+workouts = {
+    "Warm-up": [],
+    "Workout": [],
+    "Cool-down": []
+}
+
+TEMPLATE_BASE = """
 <!doctype html>
-<html lang="en">
+<html>
 <head>
 <meta charset="utf-8">
-<title>ACEest Fitness & Gym Tracker</title>
+<title>ACEest Fitness (Flask)</title>
 <style>
-body { font-family: Arial, sans-serif; margin:25px; }
-nav a { margin-right:14px; text-decoration:none; color:#007bff; font-weight:bold; }
+body { font-family: Arial; margin:25px; }
+nav a { margin-right:14px; font-weight:bold; text-decoration:none; color:#007bff; }
 .active { text-decoration:underline; }
-.status { margin:10px 0 18px; font-weight:bold; }
-.error { color:#a00; }
+h1 { margin-top:0; }
 form { padding:14px 18px; border:1px solid #ddd; border-radius:6px; max-width:360px; background:#fafafa; }
 label { display:block; margin-top:10px; font-weight:bold; }
-input, select { width:100%; padding:6px; margin-top:4px; box-sizing:border-box; }
-button { margin-top:14px; padding:8px 14px; cursor:pointer; background:#007bff; color:#fff; border:none; border-radius:4px; }
-.grid { display:flex; gap:40px; flex-wrap:wrap; margin-top:20px; }
-.section { min-width:220px; }
-.section h2 { font-size:1.05em; margin:0 0 6px; color:#007bff; }
-ul { padding-left:18px; margin:4px 0 0; }
-li { margin-bottom:4px; }
+input, select { width:100%; padding:6px; margin-top:4px; }
+button { margin-top:14px; padding:8px 14px; background:#007bff; color:#fff; border:none; cursor:pointer; }
+.section { margin-top:25px; }
 .empty { font-style:italic; color:#666; }
-.category { color:#007bff; font-weight:bold; margin-top:18px; }
-.total { margin-top:25px; font-weight:bold; color:#28a745; }
-.motivation { font-style:italic; margin-top:10px; color:#444; }
+.total { font-weight:bold; margin-top:20px; color:#28a745; }
+.chart { margin-top:25px; }
+.flash { font-weight:bold; margin:12px 0; }
+.error { color:#a00; }
+.success { color:#0a0; }
 </style>
 </head>
 <body>
 <nav>
-  <a href="{{ url_for('index') }}" class="{{ 'active' if active=='log' else '' }}">Log Workouts</a>
+  <a href="{{ url_for('index') }}" class="{{ 'active' if active=='log' else '' }}">Log</a>
   <a href="{{ url_for('summary') }}" class="{{ 'active' if active=='summary' else '' }}">Summary</a>
-  <a href="{{ url_for('workout_chart') }}" class="{{ 'active' if active=='chart' else '' }}">Workout Chart</a>
-  <a href="{{ url_for('diet_chart') }}" class="{{ 'active' if active=='diet' else '' }}">Diet Chart</a>
+  <a href="{{ url_for('chart') }}" class="{{ 'active' if active=='chart' else '' }}">Chart</a>
+  <a href="{{ url_for('api_docs') }}" class="{{ 'active' if active=='api' else '' }}">API</a>
 </nav>
 {% block content %}{% endblock %}
 </body>
 </html>
 """
 
-app.jinja_loader = DictLoader({"base.html": BASE_HTML})
-
-workouts = {"Warm-up": [], "Workout": [], "Cool-down": []}
-
-WORKOUT_CHART = {
-    "Warm-up": ["5 min Jog", "Jumping Jacks", "Arm Circles", "Leg Swings", "Dynamic Stretching"],
-    "Workout": ["Push-ups", "Squats", "Plank", "Lunges", "Burpees", "Crunches"],
-    "Cool-down": ["Slow Walking", "Static Stretching", "Deep Breathing", "Yoga Poses"]
-}
-
-DIET_PLANS = {
-    "Weight Loss": ["Oatmeal with Fruits", "Grilled Chicken Salad", "Vegetable Soup", "Brown Rice & Stir-fry Veggies"],
-    "Muscle Gain": ["Egg Omelet", "Chicken Breast", "Quinoa & Beans", "Protein Shake", "Greek Yogurt with Nuts"],
-    "Endurance": ["Banana & Peanut Butter", "Whole Grain Pasta", "Sweet Potatoes", "Salmon & Avocado", "Trail Mix"]
-}
+# Register base template
+app.jinja_loader = DictLoader({"base.html": TEMPLATE_BASE})
 
 INDEX_HTML = """
 {% extends 'base.html' %}
 {% block content %}
-<h1>ACEest Fitness & Gym Tracker</h1>
-{% if status %}
-  <div class="status {% if 'Error:' in status %}error{% endif %}">{{ status }}</div>
+<h1>ACEest Fitness (Flask)</h1>
+{% if msg %}
+  <div class="flash {{ 'error' if 'Error:' in msg else 'success' }}">{{ msg }}</div>
 {% endif %}
-<form method="post" action="{{ url_for('add_session') }}">
-  <label for="category">Category</label>
-  <select name="category" id="category">
+<form method="post" action="{{ url_for('add') }}">
+  <label>Category</label>
+  <select name="category">
     {% for c in workouts.keys() %}
       <option value="{{ c }}">{{ c }}</option>
     {% endfor %}
   </select>
-  <label for="exercise">Exercise</label>
-  <input type="text" id="exercise" name="exercise" placeholder="e.g. Push Ups">
-  <label for="duration">Duration (minutes)</label>
-  <input type="number" id="duration" name="duration" min="1" step="1" placeholder="e.g. 15">
-  <button type="submit">Add Session</button>
+  <label>Exercise</label>
+  <input name="exercise" placeholder="Push Ups">
+  <label>Duration (minutes)</label>
+  <input name="duration" type="number" min="1" step="1">
+  <button type="submit">Add</button>
 </form>
-<div class="grid">
-  {% for category, sessions in workouts.items() %}
-    <div class="section">
-      <h2>{{ category }}</h2>
-      {% if sessions %}
-        <ul>
-        {% for s in sessions %}
+{% for cat, items in workouts.items() %}
+  <div class="section">
+    <h2>{{ cat }}</h2>
+    {% if items %}
+      <ul>
+        {% for s in items %}
           <li>{{ s.exercise }} - {{ s.duration }} min ({{ s.timestamp }})</li>
         {% endfor %}
-        </ul>
-      {% else %}
-        <div class="empty">No entries yet.</div>
-      {% endif %}
-    </div>
-  {% endfor %}
-</div>
+      </ul>
+    {% else %}
+      <div class="empty">No entries yet.</div>
+    {% endif %}
+  </div>
+{% endfor %}
 {% endblock %}
 """
 
 SUMMARY_HTML = """
 {% extends 'base.html' %}
 {% block content %}
-<h1>Session Summary</h1>
-{% for category, sessions in workouts.items() %}
-  <div class="category">{{ category }}:</div>
-  {% if sessions %}
-    {% for s in sessions %}
-      <div>{{ loop.index }}. {{ s.exercise }} - {{ s.duration }} min ({{ s.timestamp }})</div>
+<h1>Summary</h1>
+{% for cat, items in workouts.items() %}
+  <h3>{{ cat }}</h3>
+  {% if items %}
+    <ul>
+    {% for s in items %}
+      <li>{{ s.exercise }} - {{ s.duration }} min</li>
     {% endfor %}
+    </ul>
   {% else %}
     <div class="empty">No sessions recorded.</div>
   {% endif %}
 {% endfor %}
-<div class="total">Total Time Spent: {{ total_time }} minutes</div>
-{% if total_time < 30 %}
-  <div class="motivation">Good start! Keep moving 💪</div>
-{% elif total_time < 60 %}
-  <div class="motivation">Nice effort! You're building consistency 🔥</div>
-{% else %}
-  <div class="motivation">Excellent dedication! Keep up the great work 🏆</div>
-{% endif %}
+<div class="total">Total: {{ total }} minutes</div>
 {% endblock %}
 """
 
-WORKOUT_CHART_HTML = """
+CHART_HTML = """
 {% extends 'base.html' %}
 {% block content %}
-<h1>Personalized Workout Chart</h1>
-{% for cat, items in chart.items() %}
-  <div class="category">{{ cat }} Exercises:</div>
-  <ul>
-    {% for it in items %}
-      <li>{{ it }}</li>
-    {% endfor %}
-  </ul>
-{% endfor %}
+<h1>Duration Chart</h1>
+<p>Aggregated duration per category.</p>
+<div class="chart">
+  <img src="{{ url_for('chart_image') }}" alt="Workout Chart">
+</div>
 {% endblock %}
 """
 
-DIET_CHART_HTML = """
+API_HTML = """
 {% extends 'base.html' %}
 {% block content %}
-<h1>Best Diet Chart for Fitness Goals</h1>
-{% for goal, foods in diets.items() %}
-  <div class="category">{{ goal }} Plan:</div>
-  <ul>
-    {% for f in foods %}
-      <li>{{ f }}</li>
-    {% endfor %}
-  </ul>
-{% endfor %}
+<h1>API Endpoints</h1>
+<ul>
+  <li>GET /api/workouts</li>
+  <li>POST /api/workouts {"category":"Workout","exercise":"Squats","duration":15}</li>
+  <li>GET /api/summary</li>
+</ul>
 {% endblock %}
 """
 
-def _render(tpl, **ctx):
+def render(tpl, **ctx):
     return render_template_string(tpl, workouts=workouts, **ctx)
 
-@app.route("/", methods=["GET"])
+@app.route("/")
 def index():
-    return _render(INDEX_HTML, status=request.args.get("status"), active="log")
+    return render(INDEX_HTML, msg=request.args.get("msg"), active="log")
 
 @app.route("/add", methods=["POST"])
-def add_session():
-    category = request.form.get("category", "Workout")
-    exercise = request.form.get("exercise", "").strip()
-    duration_raw = request.form.get("duration", "").strip()
-    if not exercise or not duration_raw:
-        return redirect(url_for('index', status="Error: exercise and duration required"))
+def add():
+    cat = request.form.get("category", "Workout")
+    ex = request.form.get("exercise", "").strip()
+    dur_raw = request.form.get("duration", "").strip()
+    if not ex or not dur_raw:
+        return redirect(url_for("index", msg="Error: exercise and duration required"))
     try:
-        duration = int(duration_raw)
+        dur = int(dur_raw)
     except ValueError:
-        return redirect(url_for('index', status="Error: duration must be a number"))
-    entry = {"exercise": exercise, "duration": duration, "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-    workouts.setdefault(category, []).append(entry)
-    return redirect(url_for('index', status=f"Added {exercise} ({duration} min) to {category}!"))
+        return redirect(url_for("index", msg="Error: duration must be number"))
+    entry = {"exercise": ex, "duration": dur, "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+    workouts.setdefault(cat, []).append(entry)
+    return redirect(url_for("index", msg=f"Added {ex} ({dur} min) to {cat}!"))
 
 @app.route("/summary")
 def summary():
-    total_time = sum(s["duration"] for v in workouts.values() for s in v)
-    return _render(SUMMARY_HTML, total_time=total_time, active="summary")
+    total = sum(s["duration"] for v in workouts.values() for s in v)
+    return render(SUMMARY_HTML, total=total, active="summary")
 
 @app.route("/chart")
-def workout_chart():
-    return _render(WORKOUT_CHART_HTML, chart=WORKOUT_CHART, active="chart")
+def chart():
+    return render(CHART_HTML, active="chart")
 
-@app.route("/diet")
-def diet_chart():
-    return _render(DIET_CHART_HTML, diets=DIET_PLANS, active="diet")
+@app.route("/chart.png")
+def chart_image():
+    cats = list(workouts.keys())
+    totals = [sum(s["duration"] for s in workouts[c]) for c in cats]
+    fig, ax = plt.subplots(figsize=(5,3))
+    ax.bar(cats, totals, color="#007bff")
+    ax.set_ylabel("Minutes")
+    ax.set_title("Workout Duration")
+    ax.grid(axis="y", alpha=0.25)
+    buf = io.BytesIO()
+    fig.tight_layout()
+    fig.savefig(buf, format="png")
+    plt.close(fig)
+    buf.seek(0)
+    return send_file(buf, mimetype="image/png")
+
+@app.route("/api")
+def api_docs():
+    return render(API_HTML, active="api")
+
+@app.route("/api/workouts", methods=["GET"])
+def api_workouts_get():
+    return {"workouts": workouts}
+
+@app.route("/api/workouts", methods=["POST"])
+def api_workouts_post():
+    data = request.get_json(force=True, silent=True) or {}
+    cat = data.get("category", "Workout")
+    ex = data.get("exercise", "").strip()
+    dur = data.get("duration")
+    if not ex or dur is None:
+        return {"error": "exercise and duration required"}, 400
+    try:
+        dur = int(dur)
+    except ValueError:
+        return {"error": "duration must be integer"}, 400
+    entry = {"exercise": ex, "duration": dur, "timestamp": datetime.datetime.now().isoformat(timespec="seconds")}
+    workouts.setdefault(cat, []).append(entry)
+    return {"status": "ok", "added": entry}, 201
+
+@app.route("/api/summary")
+def api_summary():
+    return {
+        "total_minutes": sum(s["duration"] for v in workouts.values() for s in v),
+        "by_category": {c: sum(s["duration"] for s in v) for c, v in workouts.items()}
+    }
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)

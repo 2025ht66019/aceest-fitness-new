@@ -1,10 +1,9 @@
-import re
 import pytest
 from app.app import app, workouts
 
 @pytest.fixture(autouse=True)
-def clear_workouts():
-    # Reset global workouts before each test
+def reset_workouts():
+    # Clear lists in place to preserve original dict reference
     for k in workouts.keys():
         workouts[k].clear()
     yield
@@ -13,27 +12,24 @@ def clear_workouts():
 
 @pytest.fixture
 def client():
-    app.config["TESTING"] = True
-    with app.test_client() as c:
-        yield c
+    return app.test_client()
 
 def test_index_page(client):
     resp = client.get("/")
     assert resp.status_code == 200
-    assert b"ACEest Fitness & Gym Tracker" in resp.data
-    # Should list categories even when empty
+    assert b"ACEest Fitness (Flask)" in resp.data
     for cat in workouts.keys():
         assert cat.encode() in resp.data
 
 def test_add_session_success(client):
-    data = {"category": "Workout", "exercise": "Push Ups", "duration": "15"}
-    resp = client.post("/add", data=data, follow_redirects=True)
+    resp = client.post("/add", data={"category": "Workout", "exercise": "Push Ups", "duration": "15"}, follow_redirects=True)
     assert resp.status_code == 200
     assert b"Added Push Ups (15 min) to Workout!" in resp.data
-    assert any(s["exercise"] == "Push Ups" for s in workouts["Workout"])
+    assert len(workouts["Workout"]) == 1
+    assert workouts["Workout"][0]["exercise"] == "Push Ups"
 
-def test_add_session_missing_exercise(client):
-    resp = client.post("/add", data={"category": "Warm-up", "exercise": "", "duration": "5"}, follow_redirects=True)
+def test_add_session_missing_fields(client):
+    resp = client.post("/add", data={"category": "Warm-up", "exercise": "", "duration": ""}, follow_redirects=True)
     assert resp.status_code == 200
     assert b"Error: exercise and duration required" in resp.data
     assert len(workouts["Warm-up"]) == 0
@@ -41,43 +37,66 @@ def test_add_session_missing_exercise(client):
 def test_add_session_bad_duration(client):
     resp = client.post("/add", data={"category": "Workout", "exercise": "Squats", "duration": "abc"}, follow_redirects=True)
     assert resp.status_code == 200
-    assert b"Error: duration must be a number" in resp.data
+    assert b"Error: duration must be number" in resp.data
     assert len(workouts["Workout"]) == 0
 
-def test_summary_page_empty(client):
-    resp = client.get("/summary")
+def test_unknown_category_creates_new(client):
+    resp = client.post("/add", data={"category": "Custom", "exercise": "Plank", "duration": "5"}, follow_redirects=True)
     assert resp.status_code == 200
-    assert b"Total Time Spent: 0 minutes" in resp.data
-    # Empty message appears for at least one category
-    assert b"No sessions recorded." in resp.data
-
-def test_summary_page_with_entries(client):
-    client.post("/add", data={"category": "Workout", "exercise": "Plank", "duration": "10"}, follow_redirects=True)
-    client.post("/add", data={"category": "Cool-down", "exercise": "Stretch", "duration": "5"}, follow_redirects=True)
-    resp = client.get("/summary")
-    assert resp.status_code == 200
-    assert b"Plank - 10 min" in resp.data
-    assert b"Stretch - 5 min" in resp.data
-    assert re.search(rb"Total Time Spent:\s+15 minutes", resp.data)
-
-def test_unknown_category_adds_new_list(client):
-    client.post("/add", data={"category": "Custom", "exercise": "Balance", "duration": "7"}, follow_redirects=True)
     assert "Custom" in workouts
-    assert workouts["Custom"][0]["exercise"] == "Balance"
+    assert workouts["Custom"][0]["exercise"] == "Plank"
 
-def test_workout_chart_route(client):
-    resp = client.get("/chart")
+def test_summary_page(client):
+    client.post("/add", data={"category": "Warm-up", "exercise": "Jog", "duration": "10"})
+    client.post("/add", data={"category": "Workout", "exercise": "Push Ups", "duration": "15"})
+    resp = client.get("/summary")
     assert resp.status_code == 200
-    assert b"Personalized Workout Chart" in resp.data
-    # Check one item from each section
-    assert b"Jumping Jacks" in resp.data
-    assert b"Burpees" in resp.data
-    assert b"Yoga Poses" in resp.data
+    assert b"Total: 25 minutes" in resp.data
 
-def test_diet_chart_route(client):
-    resp = client.get("/diet")
+def test_chart_png(client):
+    client.post("/add", data={"category": "Workout", "exercise": "Sit Ups", "duration": "12"})
+    resp = client.get("/chart.png")
     assert resp.status_code == 200
-    assert b"Best Diet Chart for Fitness Goals" in resp.data
-    assert b"Grilled Chicken Salad" in resp.data
-    assert b"Protein Shake" in resp.data
-    assert b"Trail Mix" in resp.data
+    assert resp.content_type == "image/png"
+    # PNG signature
+    assert resp.data.startswith(b"\x89PNG")
+
+def test_api_docs(client):
+    resp = client.get("/api")
+    assert resp.status_code == 200
+    assert b"/api/workouts" in resp.data
+
+def test_api_get_empty(client):
+    resp = client.get("/api/workouts")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert "workouts" in data
+    for cat in workouts.keys():
+        assert data["workouts"][cat] == []
+
+def test_api_post_success(client):
+    resp = client.post("/api/workouts", json={"category": "Workout", "exercise": "Burpees", "duration": 7})
+    assert resp.status_code == 201
+    data = resp.get_json()
+    assert data["status"] == "ok"
+    assert any(s["exercise"] == "Burpees" for s in workouts["Workout"])
+
+def test_api_post_bad_payload(client):
+    resp = client.post("/api/workouts", json={"exercise": "", "duration": 5})
+    assert resp.status_code == 400
+    assert b"exercise and duration required" in resp.data
+
+def test_api_post_bad_duration_type(client):
+    resp = client.post("/api/workouts", json={"exercise": "Jump", "duration": "x"})
+    assert resp.status_code == 400
+    assert b"duration must be integer" in resp.data
+
+def test_api_summary(client):
+    client.post("/api/workouts", json={"category": "Workout", "exercise": "Push Ups", "duration": 10})
+    client.post("/api/workouts", json={"category": "Warm-up", "exercise": "Jog", "duration": 5})
+    resp = client.get("/api/summary")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["total_minutes"] == 15
+    assert data["by_category"]["Workout"] == 10
+    assert data["by_category"]["Warm-up"] == 5
