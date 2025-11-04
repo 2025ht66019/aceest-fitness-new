@@ -159,27 +159,6 @@ pipeline {
             NODE_IP=$(minikube ip)
             NODE_PORT=$(kubectl get svc aceest-fitness -o jsonpath='{.spec.ports[0].nodePort}')
             echo "http://${NODE_IP}:${NODE_PORT}"
-
-            echo "Restarting local port-forward -> http://127.0.0.1:5000 ..."
-            # Kill any old port-forward for this service
-            pkill -f "kubectl port-forward( |$).*svc/aceest-fitness 5000:5000" 2>/dev/null || true
-            # Start a fresh background forward and store its PID
-            nohup kubectl port-forward svc/aceest-fitness 5000:5000 > /tmp/pf_aceest.log 2>&1 & echo $! > .pf_aceest.pid
-
-            # Wait until localhost:5000 responds (up to ~10s)
-            for i in $(seq 1 20); do
-              if curl -fsS http://127.0.0.1:5000/ >/dev/null 2>&1; then
-                echo "Local URL is ready: http://127.0.0.1:5000"
-                break
-              fi
-              sleep 0.5
-            done
-
-            # Final hints
-            echo "Local URL:  http://127.0.0.1:5000"
-            echo "PF log:     /tmp/pf_aceest.log"
-            echo "PF PID:     $(cat .pf_aceest.pid)"
-            echo "Stop PF:    pkill -f \\"kubectl port-forward( |$).*svc/aceest-fitness 5000:5000\\" || true"
           '''
         }
       }
