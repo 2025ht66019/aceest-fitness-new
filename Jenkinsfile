@@ -175,12 +175,15 @@ pipeline {
           }
 
           $raw = Get-Content -Raw -Path $yamlPath
-          if ($raw -notmatch '\$\{IMAGE_TAG\}') {
-            Write-Error "Placeholder \${IMAGE_TAG} not found in $yamlPath"
+
+          # Avoid regex/backslashes: use literal contains/replace
+          if (-not $raw.Contains('${IMAGE_TAG}')) {
+            Write-Error "Placeholder ${IMAGE_TAG} not found in $yamlPath"
             exit 1
           }
 
-          $rendered = $raw -replace '\$\{IMAGE_TAG\}', [Regex]::Escape($commitTag) -replace '\\\\', '\\'
+          $rendered = $raw.Replace('${IMAGE_TAG}', $commitTag)
+
           $rendered | kubectl apply -f -
 
           Write-Host "Waiting for rollout..."
