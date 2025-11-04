@@ -1,6 +1,6 @@
 pipeline {
   agent any
-
+  
   options {
     timestamps()
   }
@@ -136,8 +136,8 @@ pipeline {
     }
 
     stage('Docker Push') {
-    steps {
-      script {
+      steps {
+       script {
         docker.withRegistry('https://index.docker.io/v1/', 'dockerhub-creds') {
           powershell '''
             $ErrorActionPreference = "Stop"
@@ -149,13 +149,13 @@ pipeline {
           '''
         }
       }
+      }
     }
-  }
 
     stage('Deploy to Minikube') {
-    when { expression { return env.DOCKER_IMAGE_LATEST } }
-    steps {
-      powershell '''
+      when { expression { return env.DOCKER_IMAGE_LATEST } }
+      steps {
+        powershell '''
         $ErrorActionPreference = 'Stop'
 
         function Require-Cli($name) {
@@ -209,9 +209,9 @@ pipeline {
         Write-Host ("http://{0}:{1}" -f $nodeIp, $nodePort)   # format operator (safest)
         # Write-Host "http://$($nodeIp):$($nodePort)"        # or sub-expressions
       '''
+      }
     }
   }
-
 
   post {
     success  { echo 'Pipeline completed successfully.' }
@@ -219,5 +219,4 @@ pipeline {
     failure  { echo 'Pipeline failed.' }
     always   { echo 'Build finished.' }
   }
-}
 }
