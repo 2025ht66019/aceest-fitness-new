@@ -188,8 +188,8 @@ pipeline {
               minikube start --memory=2048 --cpus=2
             fi
 
-            IMAGE_TAG="${DOCKER_IMAGE_COMMIT}"
-            echo "Using image: ${IMAGE_TAG}"
+            IMAGE_FULL="${DOCKER_IMAGE_COMMIT}"
+            echo "Using image: ${IMAGE_FULL}"
 
             # Ensure base manifests exist
             test -f k8s/deployment-blue.yaml
@@ -219,7 +219,7 @@ pipeline {
 
             # Inject new image (temporary rendered file)
             RENDERED="$(mktemp)"
-            sed "s|2025ht66019/aceest_fitness:${IMAGE_TAG}|g" "$DEPLOY_FILE" > "$RENDERED"
+            sed "s|2025ht66019/aceest_fitness:${IMAGE_TAG}|${IMAGE_FULL}|g" "$DEPLOY_FILE" > "$RENDERED"
 
             echo "Applying $IDLE_COLOR deployment..."
             kubectl apply -f "$RENDERED"
