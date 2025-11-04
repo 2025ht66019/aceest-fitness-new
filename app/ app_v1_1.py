@@ -2,6 +2,8 @@ from flask import Flask, render_template_string, request, redirect, url_for
 from datetime import datetime
 
 app = Flask(__name__)
+csrf = CSRFProtect()
+csrf.init_app(app)
 
 workouts = {"Warm-up": [], "Workout": [], "Cool-down": []}
 
