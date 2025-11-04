@@ -239,7 +239,7 @@ pipeline {
             fi
 
             echo "Switching Service selector to $IDLE_COLOR..."
-            kubectl patch service aceest-fitness -p "{\"spec\":{\"selector\":{\"app\":\"aceest-fitness\",\"color\":\"${IDLE_COLOR}\"}}}"
+            kubectl set selector service/aceest-fitness app=aceest-fitness,color=${IDLE_COLOR}
 
             echo "Verifying switch..."
             NEW_COLOR=$(kubectl get svc aceest-fitness -o jsonpath='{.spec.selector.color}')
@@ -275,7 +275,7 @@ pipeline {
                 fi
                 if kubectl get deployment aceest-fitness-${TARGET} >/dev/null 2>&1; then
                   echo "Rollback: switching service back to ${TARGET}"
-                  kubectl patch service aceest-fitness -p "{\"spec\":{\"selector\":{\"app\":\"aceest-fitness\",\"color\":\"${TARGET}\"}}}" || true
+                  kubectl set selector service/aceest-fitness app=aceest-fitness,color=${TARGET} || true
                 fi
               fi
             '''
