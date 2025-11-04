@@ -1,9 +1,6 @@
 pipeline {
   agent any
   
-  tools {
-    git 'Git-2.51'
-  }
   options {
     timestamps()
   }
@@ -125,11 +122,14 @@ pipeline {
           "DOCKER_IMAGE_COMMIT=$tagCommit" | Out-File -FilePath $env:WORKSPACE\\docker_vars.env -Encoding ascii
           "DOCKER_IMAGE_LATEST=$tagLatest" | Out-File -FilePath $env:WORKSPACE\\docker_vars.env -Append -Encoding ascii
         '''
-        readFile('docker_vars.env').split('\n').each { line ->
-          if (line?.trim()) {
-            def (k, v) = line.trim().split('=', 2)
-            env[k] = v
-            }
+        // Read values and set env.* without dynamic putAt
+        def lines = readFile('docker_vars.env').readLines()
+        for (def l : lines) {
+          if (!l?.trim()) continue
+          def parts = l.trim().split('=', 2)
+          if (parts.size() != 2) continue
+          if (parts[0] == 'DOCKER_IMAGE_COMMIT')  { env.DOCKER_IMAGE_COMMIT  = parts[1] }
+          if (parts[0] == 'DOCKER_IMAGE_LATEST') { env.DOCKER_IMAGE_LATEST = parts[1] }
           }
         }
       }
