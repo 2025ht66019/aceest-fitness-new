@@ -1,6 +1,9 @@
 pipeline {
   agent any
-
+  
+  tools {
+    git 'Git-2.51'
+  }
   options {
     timestamps()
   }
@@ -107,22 +110,25 @@ pipeline {
       steps {
         script {
           powershell '''
-            $ErrorActionPreference = 'Stop'
-            $repo = '2025ht66019/aceest_fitness'
-            $shortSha = (git rev-parse --short=8 HEAD).Trim()
-            $tagCommit = "$repo:$shortSha"
-            $tagLatest = "$repo:latest"
-            Write-Host "Building Docker image $tagCommit and tagging latest"
-            docker build -t $tagCommit -t $tagLatest .
-            # Export for later stages
-            echo "DOCKER_IMAGE_COMMIT=$tagCommit" | Out-File -FilePath $env:WORKSPACE\\docker_vars.env -Encoding ascii
-            echo "DOCKER_IMAGE_LATEST=$tagLatest" | Out-File -FilePath $env:WORKSPACE\\docker_vars.env -Append -Encoding ascii
-          '''
-          // Load the values into env
-          readFile('docker_vars.env').split('\n').each { line ->
-            if (line?.trim()) {
-              def (k, v) = line.trim().split('=', 2)
-              env[k] = v
+          $ErrorActionPreference = 'Stop'
+          $repo = '2025ht66019/aceest_fitness'
+          $shortSha = (git rev-parse --short=8 HEAD).Trim()
+
+          # Avoid $repo:... parsing; use concatenation
+          $tagCommit = $repo + ":" + $shortSha
+          $tagLatest = $repo + ":latest"
+
+          Write-Host "Building Docker image $tagCommit and tagging latest"
+          docker build -t $tagCommit -t $tagLatest .
+
+          # Export for later stages
+          "DOCKER_IMAGE_COMMIT=$tagCommit" | Out-File -FilePath $env:WORKSPACE\\docker_vars.env -Encoding ascii
+          "DOCKER_IMAGE_LATEST=$tagLatest" | Out-File -FilePath $env:WORKSPACE\\docker_vars.env -Append -Encoding ascii
+        '''
+        readFile('docker_vars.env').split('\n').each { line ->
+          if (line?.trim()) {
+            def (k, v) = line.trim().split('=', 2)
+            env[k] = v
             }
           }
         }
