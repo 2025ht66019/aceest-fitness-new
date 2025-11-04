@@ -148,12 +148,21 @@ pipeline {
             Write-Host "Docker version: $(docker --version)"
 
             # Use a temporary file to reliably pass the password to docker on PowerShell/Windows.
-            # Some PowerShell piping behaviors can cause --password-stdin to fail intermittently.
+            # Write the file without adding an extra newline and ensure any previous login is cleared.
             $pwFile = Join-Path $env:WORKSPACE 'docker_password.txt'
-            Set-Content -Path $pwFile -Value $Env:DOCKER_PASS -Encoding ascii
+            [System.IO.File]::WriteAllText($pwFile, $Env:DOCKER_PASS)
+
+            # Ensure previous credentials are cleared (helps avoid cached auth confusion)
+            docker logout 2>$null || Write-Host "docker logout returned non-zero (ignored)"
 
             try {
-              Get-Content $pwFile | docker login --username $Env:DOCKER_USER --password-stdin
+              $loginOutput = Get-Content $pwFile | docker login --username $Env:DOCKER_USER --password-stdin 2>&1
+              if ($LASTEXITCODE -ne 0) {
+                Write-Host "docker login failed. Output:"; Write-Host $loginOutput
+                throw "docker login failed with exit code $LASTEXITCODE"
+              } else {
+                Write-Host "docker login succeeded"
+              }
             } finally {
               Remove-Item -Path $pwFile -Force -ErrorAction SilentlyContinue
             }
