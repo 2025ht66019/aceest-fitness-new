@@ -68,12 +68,12 @@ pipeline {
           }
         }
       }
-    }
-    post {
-        always {
-          archiveArtifacts artifacts: '.scannerwork/**', onlyIfSuccessful: true
+      post {
+          always {
+            archiveArtifacts artifacts: '.scannerwork/**', onlyIfSuccessful: true
+          }
         }
-      }
+    }
 
     stage('Quality Gate') {
       when {
