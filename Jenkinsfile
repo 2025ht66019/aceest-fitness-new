@@ -1,7 +1,6 @@
 pipeline {
   agent any
 
-  // Global options (no empty environment blocks allowed)
   options {
     timestamps()
   }
@@ -15,21 +14,36 @@ pipeline {
 
     stage('Set up Python') {
       steps {
-        sh 'python3 --version'
+        // Prefer the Python launcher on Windows
+        powershell 'py -3 --version; python --version'
       }
     }
 
     stage('Install dependencies') {
       steps {
-        sh 'python3 -m venv venv'
-        sh '. venv/bin/activate && pip install --upgrade pip'
-        sh '. venv/bin/activate && pip install -r requirements.txt'
+        powershell '''
+          $ErrorActionPreference = 'Stop'
+          py -3 -m venv venv
+          .\\venv\\Scripts\\Activate.ps1
+          $env:PIP_DISABLE_PIP_VERSION_CHECK = '1'
+          python -m pip install --upgrade pip
+          if (Test-Path requirements.txt) {
+            pip install -r requirements.txt
+          } else {
+            Write-Host "requirements.txt not found; skipping."
+          }
+        '''
       }
     }
 
     stage('Pytest with Coverage') {
       steps {
-        sh '. venv/bin/activate && pytest -v --cov=. --cov-report xml --junitxml=pytest-results.xml'
+        powershell '''
+          $ErrorActionPreference = 'Stop'
+          .\\venv\\Scripts\\Activate.ps1
+          # write coverage.xml explicitly so the artifact step can find it
+          python -m pytest -v --cov=. --cov-report "xml:coverage.xml" --junitxml=pytest-results.xml
+        '''
       }
       post {
         always {
@@ -41,27 +55,31 @@ pipeline {
 
     stage('SonarQube Scan') {
       steps {
-        // Wrap output in ANSI color if plugin installed
         wrap([$class: 'AnsiColorBuildWrapper', colorMapName: 'xterm']) {
           script {
-            // Ensure a SonarScanner tool named 'SonarScanner' is configured in Jenkins (Manage Jenkins > Global Tool Configuration)
             def scannerHome = tool name: 'SonarScanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
             withSonarQubeEnv('SonarQubeServer') {
-              // Run scanner using tool installation; rely on sonar-project.properties
-              def scanStatus = sh(returnStatus: true, script: ". venv/bin/activate && ${scannerHome}/bin/sonar-scanner")
-              if (scanStatus != 0) {
-                echo "SonarScanner failed with status ${scanStatus}"
-                // Mark a flag so Quality Gate is skipped
+              // Use the Windows .bat entrypoint
+              def status = powershell(
+                returnStatus: true,
+                script: """
+                  \$ErrorActionPreference = 'Stop'
+                  .\\venv\\Scripts\\Activate.ps1
+                  & "${scannerHome}\\bin\\sonar-scanner.bat"
+                  exit \$LASTEXITCODE
+                """
+              )
+              if (status != 0) {
+                echo "SonarScanner failed with status ${status}"
                 env.SONAR_SCAN_FAILED = 'true'
               } else {
-                // Verify report-task.txt presence for quality gate wait
-                if (fileExists('report-task.txt')) {
-                  env.SONAR_SCAN_FAILED = 'false'
-                } else if (fileExists('.scannerwork/report-task.txt')) {
-                  env.SONAR_SCAN_FAILED = 'false'
-                } else {
+                // Check both possible locations for report-task.txt on Windows
+                def hasReport = fileExists('report-task.txt') || fileExists('.scannerwork/report-task.txt')
+                if (!hasReport) {
                   echo 'report-task.txt not found; will skip quality gate.'
                   env.SONAR_SCAN_FAILED = 'true'
+                } else {
+                  env.SONAR_SCAN_FAILED = 'false'
                 }
               }
             }
@@ -71,9 +89,7 @@ pipeline {
     }
 
     stage('Quality Gate') {
-      when {
-        expression { return env.SONAR_SCAN_FAILED != 'true' }
-      }
+      when { expression { return env.SONAR_SCAN_FAILED != 'true' } }
       steps {
         script {
           timeout(time: 5, unit: 'MINUTES') {
@@ -87,96 +103,105 @@ pipeline {
     }
 
     stage('Docker Build') {
-      when {
-        expression { return currentBuild.currentResult == 'SUCCESS' }
-      }
+      when { expression { return currentBuild.currentResult == 'SUCCESS' } }
       steps {
         script {
-          // Define image name and tags
-          def repo = '2025ht66019/aceest_fitness'
-          def shortSha = sh(returnStdout: true, script: 'git rev-parse --short=8 HEAD').trim()
-          def tagCommit = "${repo}:${shortSha}"
-          def tagLatest = "${repo}:latest"
-          echo "Building Docker image ${tagCommit} and tagging latest"
-          sh "docker build -t ${tagCommit} -t ${tagLatest} ."
-          // Stash tags for next stage
-          env.DOCKER_IMAGE_COMMIT = tagCommit
-          env.DOCKER_IMAGE_LATEST = tagLatest
+          powershell '''
+            $ErrorActionPreference = 'Stop'
+            $repo = '2025ht66019/aceest_fitness'
+            $shortSha = (git rev-parse --short=8 HEAD).Trim()
+            $tagCommit = "$repo:$shortSha"
+            $tagLatest = "$repo:latest"
+            Write-Host "Building Docker image $tagCommit and tagging latest"
+            docker build -t $tagCommit -t $tagLatest .
+            # Export for later stages
+            echo "DOCKER_IMAGE_COMMIT=$tagCommit" | Out-File -FilePath $env:WORKSPACE\\docker_vars.env -Encoding ascii
+            echo "DOCKER_IMAGE_LATEST=$tagLatest" | Out-File -FilePath $env:WORKSPACE\\docker_vars.env -Append -Encoding ascii
+          '''
+          // Load the values into env
+          readFile('docker_vars.env').split('\n').each { line ->
+            if (line?.trim()) {
+              def (k, v) = line.trim().split('=', 2)
+              env[k] = v
+            }
+          }
         }
       }
     }
 
     stage('Docker Push') {
-      when {
-        expression { return env.DOCKER_IMAGE_COMMIT }
-      }
+      when { expression { return env.DOCKER_IMAGE_COMMIT } }
       steps {
-        script {
-          // Expect Jenkins to have Docker Hub credentials configured with id 'dockerhub-creds'
-          withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-            sh 'echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin'
-            sh "docker push ${env.DOCKER_IMAGE_COMMIT}"
-            sh "docker push ${env.DOCKER_IMAGE_LATEST}"
-          }
+        withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+          powershell '''
+            $ErrorActionPreference = 'Stop'
+            echo $env:DOCKER_PASS | docker login -u "$env:DOCKER_USER" --password-stdin
+            docker push "$env:DOCKER_IMAGE_COMMIT"
+            docker push "$env:DOCKER_IMAGE_LATEST"
+          '''
         }
       }
     }
+
     stage('Deploy to Minikube') {
-      when {
-        expression { return env.DOCKER_IMAGE_LATEST }
-      }
+      when { expression { return env.DOCKER_IMAGE_LATEST } }
       steps {
-        script {
-          sh '''
-            set -e
-            echo "Validating kubectl and minikube availability..."
-            command -v kubectl >/dev/null || { echo "kubectl not found"; exit 1; }
-            command -v minikube >/dev/null || { echo "minikube not found"; exit 1; }
-            echo "Ensuring minikube running..."
-            if ! minikube status >/dev/null 2>&1; then
-              minikube start --memory=2048 --cpus=2
-            fi
+        powershell '''
+          $ErrorActionPreference = 'Stop'
 
-            COMMIT_TAG="${DOCKER_IMAGE_COMMIT##*:}"
-            echo "Deploying image tag: $COMMIT_TAG"
-
-            # Verify placeholder exists
-            if ! grep -q '\\${IMAGE_TAG}' k8s/aceest-fitness.yaml; then
-              echo "Placeholder \\${IMAGE_TAG} not found in k8s/aceest-fitness.yaml"
+          function Require-Cli($name) {
+            if (-not (Get-Command $name -ErrorAction SilentlyContinue)) {
+              Write-Error "$name not found in PATH"
               exit 1
-            fi
+            }
+          }
 
-            # Substitute placeholder and apply
-            sed -e "s|\\${IMAGE_TAG}|${COMMIT_TAG}|g" k8s/aceest-fitness.yaml | kubectl apply -f -
+          Require-Cli kubectl
+          Require-Cli minikube
 
-            echo "Waiting for rollout..."
-            kubectl rollout status deployment/aceest-fitness --timeout=180s
+          Write-Host "Ensuring minikube is running..."
+          minikube status *> $null
+          if ($LASTEXITCODE -ne 0) {
+            minikube start --memory=2048 --cpus=2
+          }
 
-            echo "Current deployed image:"
-            kubectl get deploy aceest-fitness -o jsonpath='{.spec.template.spec.containers[0].image}'; echo
+          $commitTag = ($env:DOCKER_IMAGE_COMMIT.Split(':'))[-1]
+          Write-Host "Deploying image tag: $commitTag"
 
-            echo "Service URL(s):"
-            NODE_IP=$(minikube ip)
-            NODE_PORT=$(kubectl get svc aceest-fitness -o jsonpath='{.spec.ports[0].nodePort}')
-            echo "http://${NODE_IP}:${NODE_PORT}"
-          '''
-        }
+          $yamlPath = 'k8s/aceest-fitness.yaml'
+          if (-not (Test-Path $yamlPath)) {
+            Write-Error "Missing $yamlPath"
+            exit 1
+          }
+
+          $raw = Get-Content -Raw -Path $yamlPath
+          if ($raw -notmatch '\$\{IMAGE_TAG\}') {
+            Write-Error "Placeholder \${IMAGE_TAG} not found in $yamlPath"
+            exit 1
+          }
+
+          $rendered = $raw -replace '\$\{IMAGE_TAG\}', [Regex]::Escape($commitTag) -replace '\\\\', '\\'
+          $rendered | kubectl apply -f -
+
+          Write-Host "Waiting for rollout..."
+          kubectl rollout status deployment/aceest-fitness --timeout=180s
+
+          Write-Host "Current deployed image:"
+          kubectl get deploy aceest-fitness -o jsonpath="{.spec.template.spec.containers[0].image}"; Write-Host ""
+
+          Write-Host "Service URL(s):"
+          $nodeIp   = (minikube ip).Trim()
+          $nodePort = (kubectl get svc aceest-fitness -o jsonpath="{.spec.ports[0].nodePort}")
+          Write-Host "http://$nodeIp:$nodePort"
+        '''
       }
     }
   }
 
   post {
-    success {
-      echo 'Pipeline completed successfully.'
-    }
-    unstable {
-      echo 'Pipeline marked unstable (possibly failed quality gate).'
-    }
-    failure {
-      echo 'Pipeline failed.'
-    }
-    always {
-      echo 'Build finished.'
-    }
+    success  { echo 'Pipeline completed successfully.' }
+    unstable { echo 'Pipeline marked unstable (possibly failed quality gate).' }
+    failure  { echo 'Pipeline failed.' }
+    always   { echo 'Build finished.' }
   }
 }
