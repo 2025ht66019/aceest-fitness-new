@@ -188,8 +188,8 @@ pipeline {
               minikube start --memory=2048 --cpus=2
             fi
 
-            IMAGE_FULL="${DOCKER_IMAGE_COMMIT}"
-            echo "Using image: ${IMAGE_FULL}"
+            IMAGE_TAG="${DOCKER_IMAGE_COMMIT}"
+            echo "Using image: ${IMAGE_TAG}"
 
             # Ensure base manifests exist
             test -f k8s/deployment-blue.yaml
