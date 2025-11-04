@@ -44,20 +44,14 @@ pipeline {
         // Wrap output in ANSI color if plugin installed
         wrap([$class: 'AnsiColorBuildWrapper', colorMapName: 'xterm']) {
           script {
-            // Ensure a SonarScanner tool named 'SonarScanner' is configured in Jenkins (Manage Jenkins > Global Tool Configuration)
             def scannerHome = tool name: 'SonarScanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
             withSonarQubeEnv('SonarQubeServer') {
-              // Run scanner using tool installation; rely on sonar-project.properties
               def scanStatus = sh(returnStatus: true, script: ". venv/bin/activate && ${scannerHome}/bin/sonar-scanner")
               if (scanStatus != 0) {
                 echo "SonarScanner failed with status ${scanStatus}"
-                // Mark a flag so Quality Gate is skipped
                 env.SONAR_SCAN_FAILED = 'true'
               } else {
-                // Verify report-task.txt presence for quality gate wait
-                if (fileExists('report-task.txt')) {
-                  env.SONAR_SCAN_FAILED = 'false'
-                } else if (fileExists('.scannerwork/report-task.txt')) {
+                if (fileExists('report-task.txt') || fileExists('.scannerwork/report-task.txt')) {
                   env.SONAR_SCAN_FAILED = 'false'
                 } else {
                   echo 'report-task.txt not found; will skip quality gate.'
@@ -69,10 +63,11 @@ pipeline {
         }
       }
       post {
-          always {
-            archiveArtifacts artifacts: '.scannerwork/**', onlyIfSuccessful: true
-          }
+        always {
+          // Archive raw scanner working files (logs, metadata)
+          archiveArtifacts artifacts: '.scannerwork/**', onlyIfSuccessful: true
         }
+      }
     }
 
     stage('Quality Gate') {
@@ -164,7 +159,7 @@ pipeline {
             NODE_IP=$(minikube ip)
             NODE_PORT=$(kubectl get svc aceest-fitness -o jsonpath='{.spec.ports[0].nodePort}')
             echo "http://${NODE_IP}:${NODE_PORT}"
-            echo " minikube service aceest-fitness --url"
+            echo "minikube service aceest-fitness --url"
           '''
         }
       }
