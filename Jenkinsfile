@@ -138,7 +138,7 @@ pipeline {
     stage('Docker Push') {
       when { expression { return env.DOCKER_IMAGE_COMMIT } }
       steps {
-        withCredentials([usernamePassword(credentialsId: 'Docker-hub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+        withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
           powershell '''
             $ErrorActionPreference = 'Stop'
             echo $env:DOCKER_PASS | docker login -u "$env:DOCKER_USER" --password-stdin
