@@ -21,6 +21,14 @@ spec:
         app: aceest-fitness
     spec:
       terminationGracePeriodSeconds: 15
+      # Disable default service account token automount for least privilege
+      automountServiceAccountToken: false
+      # Explicit non-root security context (container also runs as non-root)
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
       containers:
         - name: web
           image: 2025ht66019/aceest_fitness:${IMAGE_TAG}
@@ -48,9 +56,11 @@ spec:
             requests:
               cpu: 50m
               memory: 64Mi
+              ephemeral-storage: 64Mi
             limits:
               cpu: 250m
               memory: 256Mi
+              ephemeral-storage: 256Mi
 ---
 apiVersion: v1
 kind: Service
