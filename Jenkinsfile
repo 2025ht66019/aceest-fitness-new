@@ -1,8 +1,10 @@
 pipeline {
   agent any
+  }
 
-  options {
-    timestamps()
+  }
+
+  post {
   }
 
   stages {
@@ -41,6 +43,7 @@ pipeline {
         powershell '''
           $ErrorActionPreference = 'Stop'
           .\\venv\\Scripts\\Activate.ps1
+          # write coverage.xml explicitly so the artifact step can find it
           python -m pytest -v --cov=. --cov-report "xml:coverage.xml" --junitxml=pytest-results.xml
         '''
       }
@@ -58,6 +61,7 @@ pipeline {
           script {
             def scannerHome = tool name: 'SonarScanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
             withSonarQubeEnv('SonarQubeServer') {
+              // Use the Windows .bat entrypoint
               def status = powershell(
                 returnStatus: true,
                 script: """
@@ -71,6 +75,7 @@ pipeline {
                 echo "SonarScanner failed with status ${status}"
                 env.SONAR_SCAN_FAILED = 'true'
               } else {
+                // Check both possible locations for report-task.txt on Windows
                 def hasReport = fileExists('report-task.txt') || fileExists('.scannerwork/report-task.txt')
                 if (!hasReport) {
                   echo 'report-task.txt not found; will skip quality gate.'
@@ -104,49 +109,41 @@ pipeline {
       steps {
         script {
           powershell '''
-            $ErrorActionPreference = 'Stop'
-            $repo = '2025ht66019/aceest_fitness'
-            $shortSha = (git rev-parse --short=8 HEAD).Trim()
+          $ErrorActionPreference = 'Stop'
+          $repo = '2025ht66019/aceest_fitness'
+          $shortSha = (git rev-parse --short=8 HEAD).Trim()
 
-            # Build tags via concatenation (avoid $repo: parsing)
-            $tagCommit = $repo + ":" + $shortSha
-            $tagLatest = $repo + ":latest"
+          # Avoid $repo:... parsing; use concatenation
+          $tagCommit = $repo + ":" + $shortSha
+          $tagLatest = $repo + ":latest"
 
-            Write-Host "Building Docker image $tagCommit and tagging latest"
-            docker build -t $tagCommit -t $tagLatest .
+          Write-Host "Building Docker image $tagCommit and tagging latest"
+          docker build -t $tagCommit -t $tagLatest .
 
-            # Export for later stages
-            "DOCKER_IMAGE_COMMIT=$tagCommit" | Out-File -FilePath $env:WORKSPACE\\docker_vars.env -Encoding ascii
-            "DOCKER_IMAGE_LATEST=$tagLatest" | Out-File -FilePath $env:WORKSPACE\\docker_vars.env -Append -Encoding ascii
-          '''
-          def lines = readFile('docker_vars.env').readLines()
-          for (def l : lines) {
-            if (!l?.trim()) continue
-            def parts = l.trim().split('=', 2)
-            if (parts.size() != 2) continue
-            if (parts[0] == 'DOCKER_IMAGE_COMMIT')  { env.DOCKER_IMAGE_COMMIT  = parts[1] }
-            if (parts[0] == 'DOCKER_IMAGE_LATEST') { env.DOCKER_IMAGE_LATEST = parts[1] }
+          # Export for later stages
+          "DOCKER_IMAGE_COMMIT=$tagCommit" | Out-File -FilePath $env:WORKSPACE\\docker_vars.env -Encoding ascii
+          "DOCKER_IMAGE_LATEST=$tagLatest" | Out-File -FilePath $env:WORKSPACE\\docker_vars.env -Append -Encoding ascii
+        '''
+        // Read values and set env.* without dynamic putAt
+        def lines = readFile('docker_vars.env').readLines()
+        for (def l : lines) {
+          if (!l?.trim()) continue
+          def parts = l.trim().split('=', 2)
+          if (parts.size() != 2) continue
+          if (parts[0] == 'DOCKER_IMAGE_COMMIT')  { env.DOCKER_IMAGE_COMMIT  = parts[1] }
+          if (parts[0] == 'DOCKER_IMAGE_LATEST') { env.DOCKER_IMAGE_LATEST = parts[1] }
           }
         }
       }
     }
 
     stage('Docker Push') {
-      steps {
-        withCredentials([usernamePassword(
-          credentialsId: 'dockerhub-creds',
-          usernameVariable: 'DOCKER_USER',
-          passwordVariable: 'DOCKER_PASS'
-        )]) {
+    steps {
+      script {
+        docker.withRegistry('https://index.docker.io/v1/', 'dockerhub-creds') {
           powershell '''
             $ErrorActionPreference = "Stop"
             docker --version
-
-            # Clear stale creds then login with PAT
-            docker logout "https://index.docker.io/v1/" *> $null
-            $pwFile = [System.IO.Path]::GetTempFileName()
-            Set-Content -Path $pwFile -Value $Env:DOCKER_PASS -NoNewline
-            Get-Content $pwFile | docker login --username $Env:DOCKER_USER --password-stdin
 
             Write-Host "Pushing images to Docker Hub..."
             docker push $Env:DOCKER_IMAGE_COMMIT
@@ -155,62 +152,68 @@ pipeline {
         }
       }
     }
+  }
 
     stage('Deploy to Minikube') {
-      when { expression { return env.DOCKER_IMAGE_LATEST } }
-      steps {
-        powershell '''
-          $ErrorActionPreference = 'Stop'
+    when { expression { return env.DOCKER_IMAGE_LATEST } }
+    steps {
+      powershell '''
+        $ErrorActionPreference = 'Stop'
 
-          function Require-Cli($name) {
-            if (-not (Get-Command $name -ErrorAction SilentlyContinue)) {
-              Write-Error "$name not found in PATH"
-              exit 1
-            }
-          }
-
-          Require-Cli kubectl
-          Require-Cli minikube
-
-          Write-Host "Ensuring minikube is running..."
-          minikube status *> $null
-          if ($LASTEXITCODE -ne 0) {
-            minikube start --memory=2048 --cpus=2
-          }
-
-          $commitTag = ($env:DOCKER_IMAGE_COMMIT.Split(':'))[-1]
-          Write-Host "Deploying image tag: $commitTag"
-
-          $yamlPath = 'k8s/aceest-fitness.yaml'
-          if (-not (Test-Path $yamlPath)) {
-            Write-Error "Missing $yamlPath"
+        function Require-Cli($name) {
+          if (-not (Get-Command $name -ErrorAction SilentlyContinue)) {
+            Write-Error "$name not found in PATH"
             exit 1
           }
+        }
 
-          $raw = Get-Content -Raw -Path $yamlPath
+        Require-Cli kubectl
+        Require-Cli minikube
 
-          if (-not $raw.Contains('${IMAGE_TAG}')) {
-            Write-Error "Placeholder ${IMAGE_TAG} not found in $yamlPath"
-            exit 1
-          }
+        Write-Host "Ensuring minikube is running..."
+        minikube status *> $null
+        if ($LASTEXITCODE -ne 0) {
+          minikube start --memory=2048 --cpus=2
+        }
 
-          $rendered = $raw.Replace('${IMAGE_TAG}', $commitTag)
-          $rendered | kubectl apply -f -
+        $commitTag = ($env:DOCKER_IMAGE_COMMIT.Split(':'))[-1]
+        Write-Host "Deploying image tag: $commitTag"
 
-          Write-Host "Waiting for rollout..."
-          kubectl rollout status deployment/aceest-fitness --timeout=180s
+        $yamlPath = 'k8s/aceest-fitness.yaml'
+        if (-not (Test-Path $yamlPath)) {
+          Write-Error "Missing $yamlPath"
+          exit 1
+        }
 
-          Write-Host "Current deployed image:"
-          kubectl get deploy aceest-fitness -o jsonpath="{.spec.template.spec.containers[0].image}"; Write-Host ""
+        $raw = Get-Content -Raw -Path $yamlPath
 
-          Write-Host "Service URL(s):"
-          $nodeIp   = (minikube ip).Trim()
-          $nodePort = (kubectl get svc aceest-fitness -o jsonpath="{.spec.ports[0].nodePort}" | Out-String).Trim()
-          Write-Host ("http://{0}:{1}" -f $nodeIp, $nodePort)
-        '''
-      }
+        # Avoid regex/backslashes: use literal contains/replace
+        if (-not $raw.Contains('${IMAGE_TAG}')) {
+          Write-Error "Placeholder ${IMAGE_TAG} not found in $yamlPath"
+          exit 1
+        }
+
+        $rendered = $raw.Replace('${IMAGE_TAG}', $commitTag)
+
+        $rendered | kubectl apply -f -
+
+        Write-Host "Waiting for rollout..."
+        kubectl rollout status deployment/aceest-fitness --timeout=180s
+
+        Write-Host "Current deployed image:"
+        kubectl get deploy aceest-fitness -o jsonpath="{.spec.template.spec.containers[0].image}"; Write-Host ""
+
+        Write-Host "Service URL(s):"
+        $nodeIp   = (minikube ip).Trim()
+        $nodePort = (kubectl get svc aceest-fitness -o jsonpath="{.spec.ports[0].nodePort}" | Out-String).Trim()
+
+        # Either of these two lines is fine:
+        Write-Host ("http://{0}:{1}" -f $nodeIp, $nodePort)   # format operator (safest)
+        # Write-Host "http://$($nodeIp):$($nodePort)"        # or sub-expressions
+      '''
     }
-  }  // <-- closes stages
+  }
+
 
   post {
     success  { echo 'Pipeline completed successfully.' }
@@ -218,4 +221,4 @@ pipeline {
     failure  { echo 'Pipeline failed.' }
     always   { echo 'Build finished.' }
   }
-}  // <-- closes pipeline
+}
