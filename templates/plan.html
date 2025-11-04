@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>💡 Personalized Workout Plan</h1>
+{% for category, exercises in chart_data.items() %}
+  <section class="card">
+    <h2>{{ category }}</h2>
+    <ul class="bullets">
+      {% for ex in exercises %}
+      <li>{{ ex }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+{% endfor %}
+{% endblock %}
