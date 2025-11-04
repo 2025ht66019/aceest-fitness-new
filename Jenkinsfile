@@ -136,18 +136,28 @@ pipeline {
     }
 
     stage('Docker Push') {
-      when { expression { return env.DOCKER_IMAGE_COMMIT } }
       steps {
-        withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+        withCredentials([usernamePassword(
+          credentialsId: 'dockerhub-creds',    // <-- your Jenkins creds ID
+          usernameVariable: 'DOCKER_USER',
+          passwordVariable: 'DOCKER_PASS'
+        )]) {
           powershell '''
-            $ErrorActionPreference = 'Stop'
-            echo $env:DOCKER_PASS | docker login -u "$env:DOCKER_USER" --password-stdin
-            docker push "$env:DOCKER_IMAGE_COMMIT"
-            docker push "$env:DOCKER_IMAGE_LATEST"
+            $ErrorActionPreference = "Stop"
+
+            # Show docker version (optional, good for debugging)
+            docker --version
+
+            # Login using PowerShell env vars
+            $Env:DOCKER_PASS | docker login -u $Env:DOCKER_USER --password-stdin
+
+            # Push both tags
+            docker push 2025ht66019/aceest_fitness:$(git rev-parse --short HEAD)
+            docker push 2025ht66019/aceest_fitness:latest
           '''
-        }
-      }
     }
+  }
+}
 
     stage('Deploy to Minikube') {
       when { expression { return env.DOCKER_IMAGE_LATEST } }
