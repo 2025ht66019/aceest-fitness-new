@@ -153,62 +153,65 @@ pipeline {
   }
 
     stage('Deploy to Minikube') {
-      when { expression { return env.DOCKER_IMAGE_LATEST } }
-      steps {
-        powershell '''
-          $ErrorActionPreference = 'Stop'
+    when { expression { return env.DOCKER_IMAGE_LATEST } }
+    steps {
+      powershell '''
+        $ErrorActionPreference = 'Stop'
 
-          function Require-Cli($name) {
-            if (-not (Get-Command $name -ErrorAction SilentlyContinue)) {
-              Write-Error "$name not found in PATH"
-              exit 1
-            }
-          }
-
-          Require-Cli kubectl
-          Require-Cli minikube
-
-          Write-Host "Ensuring minikube is running..."
-          minikube status *> $null
-          if ($LASTEXITCODE -ne 0) {
-            minikube start --memory=2048 --cpus=2
-          }
-
-          $commitTag = ($env:DOCKER_IMAGE_COMMIT.Split(':'))[-1]
-          Write-Host "Deploying image tag: $commitTag"
-
-          $yamlPath = 'k8s/aceest-fitness.yaml'
-          if (-not (Test-Path $yamlPath)) {
-            Write-Error "Missing $yamlPath"
+        function Require-Cli($name) {
+          if (-not (Get-Command $name -ErrorAction SilentlyContinue)) {
+            Write-Error "$name not found in PATH"
             exit 1
           }
+        }
 
-          $raw = Get-Content -Raw -Path $yamlPath
+        Require-Cli kubectl
+        Require-Cli minikube
 
-          # Avoid regex/backslashes: use literal contains/replace
-          if (-not $raw.Contains('${IMAGE_TAG}')) {
-            Write-Error "Placeholder ${IMAGE_TAG} not found in $yamlPath"
-            exit 1
-          }
+        Write-Host "Ensuring minikube is running..."
+        minikube status *> $null
+        if ($LASTEXITCODE -ne 0) {
+          minikube start --memory=2048 --cpus=2
+        }
 
-          $rendered = $raw.Replace('${IMAGE_TAG}', $commitTag)
+        $commitTag = ($env:DOCKER_IMAGE_COMMIT.Split(':'))[-1]
+        Write-Host "Deploying image tag: $commitTag"
 
-          $rendered | kubectl apply -f -
+        $yamlPath = 'k8s/aceest-fitness.yaml'
+        if (-not (Test-Path $yamlPath)) {
+          Write-Error "Missing $yamlPath"
+          exit 1
+        }
 
-          Write-Host "Waiting for rollout..."
-          kubectl rollout status deployment/aceest-fitness --timeout=180s
+        $raw = Get-Content -Raw -Path $yamlPath
 
-          Write-Host "Current deployed image:"
-          kubectl get deploy aceest-fitness -o jsonpath="{.spec.template.spec.containers[0].image}"; Write-Host ""
+        # Avoid regex/backslashes: use literal contains/replace
+        if (-not $raw.Contains('${IMAGE_TAG}')) {
+          Write-Error "Placeholder ${IMAGE_TAG} not found in $yamlPath"
+          exit 1
+        }
 
-          Write-Host "Service URL(s):"
-          $nodeIp   = (minikube ip).Trim()
-          $nodePort = (kubectl get svc aceest-fitness -o jsonpath="{.spec.ports[0].nodePort}")
-          Write-Host "http://$nodeIp:$nodePort"
-        '''
-      }
+        $rendered = $raw.Replace('${IMAGE_TAG}', $commitTag)
+
+        $rendered | kubectl apply -f -
+
+        Write-Host "Waiting for rollout..."
+        kubectl rollout status deployment/aceest-fitness --timeout=180s
+
+        Write-Host "Current deployed image:"
+        kubectl get deploy aceest-fitness -o jsonpath="{.spec.template.spec.containers[0].image}"; Write-Host ""
+
+        Write-Host "Service URL(s):"
+        $nodeIp   = (minikube ip).Trim()
+        $nodePort = (kubectl get svc aceest-fitness -o jsonpath="{.spec.ports[0].nodePort}" | Out-String).Trim()
+
+        # Either of these two lines is fine:
+        Write-Host ("http://{0}:{1}" -f $nodeIp, $nodePort)   # format operator (safest)
+        # Write-Host "http://$($nodeIp):$($nodePort)"        # or sub-expressions
+      '''
     }
   }
+
 
   post {
     success  { echo 'Pipeline completed successfully.' }
