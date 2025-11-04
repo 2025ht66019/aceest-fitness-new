@@ -74,8 +74,6 @@ pipeline {
           archiveArtifacts artifacts: '.scannerwork/**', onlyIfSuccessful: true
         }
       }
-    }
-
 
     stage('Quality Gate') {
       when {
