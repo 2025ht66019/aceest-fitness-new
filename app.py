@@ -55,6 +55,8 @@ def create_app(test_config: Optional[dict] = None) -> Flask:
             # Optional enforcement: set FLASK_ENFORCE_SECRET=1 to force failure when secret not set.
             if os.getenv('FLASK_ENFORCE_SECRET') == '1':
                 raise RuntimeError('SECRET_KEY environment variable required (FLASK_ENFORCE_SECRET=1).')
+    # Assignment required by Flask; value is sourced from env or ephemeral random token, never a static literal.
+    # nosec B105 (not a hard-coded credential)  # sonar-ignore-security: generated/ephemeral, not hard-coded
     app.config['SECRET_KEY'] = secret_key
 
     # Enable CSRF protection except during tests to keep fixtures simple.
