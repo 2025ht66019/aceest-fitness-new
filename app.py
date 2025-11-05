@@ -6,6 +6,7 @@ from datetime import datetime
 from threading import Lock
 from flask import Flask, render_template, request, redirect, url_for, flash, current_app
 from matplotlib.figure import Figure
+from typing import Optional
 
 DATA_LOCK = Lock()
 DEFAULT_DATA = {"Warm-up": [], "Workout": [], "Cool-down": []}
@@ -35,7 +36,7 @@ def save_data(data):
     os.replace(tmp_file, data_file)
 
 
-def create_app(test_config: dict | None = None) -> Flask:
+def create_app(test_config: Optional[dict] = None) -> Flask:
     """Application factory so tests can create isolated instances.
 
     test_config can override DATA_FILE, SECRET_KEY, DEBUG, etc.
