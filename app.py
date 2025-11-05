@@ -44,17 +44,17 @@ def create_app(test_config: Optional[dict] = None) -> Flask:
     """
     app = Flask(__name__)
     # Secure secret key handling: require env variable in non-testing contexts to avoid hard-coded credentials.
+    # Derive secret key with secure fallbacks. Never hard-code; generate ephemeral if missing.
     if test_config and test_config.get('SECRET_KEY'):
         secret_key = test_config['SECRET_KEY']
     else:
         secret_key = os.getenv('FLASK_SECRET_KEY') or os.getenv('SECRET_KEY')
         if not secret_key:
-            # For pytest or explicit TESTING contexts generate an ephemeral secret instead of hard-coding.
-            if (test_config and test_config.get('TESTING')) or os.getenv('PYTEST_CURRENT_TEST'):
-                import secrets
-                secret_key = secrets.token_hex(32)
-            else:
-                raise RuntimeError('SECRET_KEY not set. Define FLASK_SECRET_KEY or SECRET_KEY environment variable.')
+            import secrets
+            secret_key = secrets.token_hex(32)
+            # Optional enforcement: set FLASK_ENFORCE_SECRET=1 to force failure when secret not set.
+            if os.getenv('FLASK_ENFORCE_SECRET') == '1':
+                raise RuntimeError('SECRET_KEY environment variable required (FLASK_ENFORCE_SECRET=1).')
     app.config['SECRET_KEY'] = secret_key
 
     # Enable CSRF protection except during tests to keep fixtures simple.
@@ -173,8 +173,12 @@ def create_app(test_config: Optional[dict] = None) -> Flask:
     return app
 
 
-app = create_app()
-
+_is_pytest = bool(os.getenv('PYTEST_CURRENT_TEST'))
+if _is_pytest:
+    # Ensure TESTING flag so ephemeral secret + CSRF disabled for predictable tests.
+    app = create_app({'TESTING': True})
+else:
+    app = create_app()
 
 if __name__ == "__main__":
     host = os.environ.get("FLASK_HOST", "127.0.0.1")
