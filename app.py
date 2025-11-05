@@ -57,7 +57,7 @@ def create_app(test_config: Optional[dict] = None) -> Flask:
                 raise RuntimeError('SECRET_KEY environment variable required (FLASK_ENFORCE_SECRET=1).')
     # Assignment required by Flask; value is sourced from env or ephemeral random token, never a static literal.
     # nosec B105 (not a hard-coded credential)  # sonar-ignore-security: generated/ephemeral, not hard-coded
-    app.config['SECRET_KEY'] = secret_key
+    app.config['SECRET_KEY'] = secret_key  # NOSONAR dynamic/env-derived, not a hard-coded credential
 
     # Enable CSRF protection except during tests to keep fixtures simple.
     if not (test_config and test_config.get('TESTING')):
