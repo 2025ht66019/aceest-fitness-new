@@ -11,3 +11,5 @@ pytest==7.4.2
 pytest-cov==4.1.0
 # Upgrade to >=2.32.4 for CVE-2024-35195 & CVE-2024-47081
 requests==2.32.4
+# CSRF protection (Flask-WTF) for secure forms; pinned for reproducibility
+Flask-WTF==1.2.1

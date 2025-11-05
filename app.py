@@ -5,6 +5,7 @@ import base64
 from datetime import datetime
 from threading import Lock
 from flask import Flask, render_template, request, redirect, url_for, flash, current_app
+from flask_wtf import CSRFProtect
 from matplotlib.figure import Figure
 from typing import Optional
 
@@ -42,8 +43,22 @@ def create_app(test_config: Optional[dict] = None) -> Flask:
     test_config can override DATA_FILE, SECRET_KEY, DEBUG, etc.
     """
     app = Flask(__name__)
-    # Ensure a secret key for session/flash usage
-    app.config['SECRET_KEY'] = test_config.get('SECRET_KEY', 'dev-secret') if test_config else 'dev-secret'
+    # Secure secret key handling: require env variable in non-testing contexts to avoid hard-coded credentials.
+    if test_config and test_config.get('SECRET_KEY'):
+        secret_key = test_config['SECRET_KEY']
+    else:
+        secret_key = os.getenv('FLASK_SECRET_KEY') or os.getenv('SECRET_KEY')
+        if not secret_key:
+            # Allow a predictable key only when running tests; otherwise raise for security.
+            if test_config and test_config.get('TESTING'):
+                secret_key = 'test-secret'
+            else:
+                raise RuntimeError('SECRET_KEY not set. Define FLASK_SECRET_KEY or SECRET_KEY environment variable.')
+    app.config['SECRET_KEY'] = secret_key
+
+    # Enable CSRF protection except during tests to keep fixtures simple.
+    if not (test_config and test_config.get('TESTING')):
+        CSRFProtect(app)
     app.config.setdefault('DATA_FILE', os.path.join(os.path.dirname(__file__), 'data.json'))
 
     if test_config:
