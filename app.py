@@ -5,11 +5,17 @@ import base64
 from datetime import datetime
 from threading import Lock
 from flask import Flask, render_template, request, redirect, url_for, flash, current_app
+from flask_wtf import CSRFProtect
+from flask_wtf.csrf import generate_csrf
 from matplotlib.figure import Figure
 from typing import Optional
 
 DATA_LOCK = Lock()
 DEFAULT_DATA = {"Warm-up": [], "Workout": [], "Cool-down": []}
+
+# Cache a single SECRET_KEY value so all Gunicorn workers share it.
+_GLOBAL_SECRET: Optional[str] = None
+_SECRET_FILE_PATH = os.path.join(os.path.dirname(__file__), '.secret_key')
 
 
 def load_data():
@@ -49,17 +55,59 @@ def save_data(data):
         return False
 
 
-def _derive_secret(test_config: Optional[dict], testing: bool) -> str:
-    """Resolve SECRET_KEY (env > test override > ephemeral)."""
+def _get_global_secret(test_config: Optional[dict], testing: bool) -> str:
+    """Return a multi-process stable SECRET_KEY.
+
+    Order of precedence:
+    1. test_config['SECRET_KEY'] (for unit tests)
+    2. FLASK_SECRET_KEY / SECRET_KEY env vars (recommended for prod)
+    3. Persistent secret file '.secret_key' (created once then reused by all workers)
+    4. Ephemeral random (ONLY if testing or no persistence possible)
+
+    Having a stable secret across workers avoids CSRF session token mismatches.
+    """
+    global _GLOBAL_SECRET
+    if _GLOBAL_SECRET:
+        return _GLOBAL_SECRET
+
+    # 1. Explicit test override
     if test_config and test_config.get('SECRET_KEY'):
-        return test_config['SECRET_KEY']
+        _GLOBAL_SECRET = test_config['SECRET_KEY']
+        return _GLOBAL_SECRET
+
+    # 2. Environment variables
     env_secret = os.getenv('FLASK_SECRET_KEY') or os.getenv('SECRET_KEY')
     if env_secret:
-        return env_secret
+        _GLOBAL_SECRET = env_secret
+        return _GLOBAL_SECRET
+
+    # 3. Persistent file (skip during tests for isolation)
+    if not testing:
+        try:
+            if os.path.exists(_SECRET_FILE_PATH):
+                with open(_SECRET_FILE_PATH, 'r', encoding='utf-8') as fh:
+                    file_secret = fh.read().strip()
+                if file_secret:
+                    _GLOBAL_SECRET = file_secret
+                    return _GLOBAL_SECRET
+            # Create a new one atomically
+            import secrets
+            new_secret = secrets.token_hex(32)
+            tmp_path = _SECRET_FILE_PATH + '.tmp'
+            with open(tmp_path, 'w', encoding='utf-8') as fh:
+                fh.write(new_secret)
+            os.replace(tmp_path, _SECRET_FILE_PATH)
+            _GLOBAL_SECRET = new_secret
+            return _GLOBAL_SECRET
+        except OSError as e:
+            current_app.logger.warning(f"Unable to load/write secret file '{_SECRET_FILE_PATH}': {e}; falling back to ephemeral.")
+
+    # 4. Ephemeral fallback (acceptable for tests / last resort)
     import secrets
     if os.getenv('FLASK_ENFORCE_SECRET') == '1' and not testing:
         raise RuntimeError('SECRET_KEY environment variable required (FLASK_ENFORCE_SECRET=1).')
-    return secrets.token_hex(32)
+    _GLOBAL_SECRET = secrets.token_hex(32)
+    return _GLOBAL_SECRET
 
 
 def _register_routes(app: Flask) -> None:
@@ -184,15 +232,21 @@ def create_app(test_config: Optional[dict] = None) -> Flask:
     app = Flask(__name__)
     testing = bool(test_config and test_config.get('TESTING')) or bool(os.getenv('PYTEST_CURRENT_TEST'))
     # Secret key resolved via helper; never hard-coded.
-    app.config['SECRET_KEY'] = _derive_secret(test_config, testing)  # NOSONAR env/ephemeral sourced
+    app.config['SECRET_KEY'] = _get_global_secret(test_config, testing)  # NOSONAR env/ephemeral sourced + cached
 
-    # CSRF protection removed per user request; rely on server-side validation only.
+    # Re-enable CSRF protection (disabled automatically when testing flag set)
+    if not testing:
+        CSRFProtect(app)
 
     app.config.setdefault('DATA_FILE', os.path.join(os.path.dirname(__file__), 'data.json'))
     if test_config:
         app.config.update(test_config)
 
     _register_routes(app)
+    # Provide csrf_token helper for templates using manual forms
+    @app.context_processor
+    def inject_csrf():  # pragma: no cover simple helper
+        return {"csrf_token": generate_csrf}
     return app
 
 

@@ -47,6 +47,12 @@ spec:
               cpu: 250m
               memory: 256Mi
               ephemeral-storage: 256Mi
+          env:
+            - name: FLASK_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aceest-fitness-secret
+                  key: FLASK_SECRET_KEY
 ---
 apiVersion: v1
 kind: Service

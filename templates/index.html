@@ -2,7 +2,7 @@
 {% block content %}
 <h1>🏋️ Log Workouts</h1>
 <form method="post" action="{{ url_for('log_workout') }}" class="card">
-  {# CSRF removed per request. Ensure inputs validated server-side. #}
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
   <div class="form-group">
     <label for="category">Category</label>
     <select name="category" id="category">
