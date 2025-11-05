@@ -1,6 +1,6 @@
 Flask==2.3.3
-# Upgrade to resolve multiple CVEs (CVE-2024-6221, 6866, 6844, 1681, 6839)
-Flask-Cors==6.0.0
+# Flask-Cors pinned to latest published (5.0.0). 6.0.0 does not exist and caused pipeline failure.
+Flask-Cors==5.0.0
 reportlab==4.0.4
 matplotlib==3.9.4
 # Upgrade to >=23.0.0 to fix CVE-2024-1135 & CVE-2024-6827
