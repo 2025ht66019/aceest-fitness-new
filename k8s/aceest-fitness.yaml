@@ -30,14 +30,20 @@ spec:
             httpGet:
               path: /
               port: 5000
-            initialDelaySeconds: 5
-            periodSeconds: 10
+            initialDelaySeconds: 10
+            periodSeconds: 15
           livenessProbe:
             httpGet:
               path: /
               port: 5000
             initialDelaySeconds: 15
             periodSeconds: 20
+          startupProbe:
+            httpGet:
+              path: /
+              port: 5000
+            failureThreshold: 10
+            periodSeconds: 5
           resources:
             requests:
               cpu: 50m
