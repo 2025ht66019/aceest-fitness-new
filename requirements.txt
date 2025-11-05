@@ -1,4 +1,11 @@
-matplotlib
-Flask
-pytest
-pytest-cov
+Flask==2.3.3
+# Upgrade to resolve multiple CVEs (CVE-2024-6221, 6866, 6844, 1681, 6839)
+Flask-Cors==6.0.0
+reportlab==4.0.4
+matplotlib==3.9.4
+# Upgrade to >=23.0.0 to fix CVE-2024-1135 & CVE-2024-6827
+gunicorn==23.0.0
+pytest==7.4.2
+pytest-cov==4.1.0
+# Upgrade to >=2.32.4 for CVE-2024-35195 & CVE-2024-47081
+requests==2.32.4
