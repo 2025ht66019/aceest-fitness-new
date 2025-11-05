@@ -2,6 +2,7 @@ import os
 import json
 import io
 import base64
+import logging
 from datetime import datetime
 from threading import Lock
 from flask import Flask, render_template, request, redirect, url_for, flash, current_app
@@ -16,6 +17,9 @@ DEFAULT_DATA = {"Warm-up": [], "Workout": [], "Cool-down": []}
 # Cache a single SECRET_KEY value so all Gunicorn workers share it.
 _GLOBAL_SECRET: Optional[str] = None
 _SECRET_FILE_PATH = os.path.join(os.path.dirname(__file__), '.secret_key')
+
+# Module-level logger (safe outside app context)
+logger = logging.getLogger(__name__)
 
 
 def load_data():
@@ -56,15 +60,13 @@ def save_data(data):
 
 
 def _get_global_secret(test_config: Optional[dict], testing: bool) -> str:
-    """Return a multi-process stable SECRET_KEY.
+    """Return a multi-process stable SECRET_KEY without relying on app context.
 
-    Order of precedence:
-    1. test_config['SECRET_KEY'] (for unit tests)
-    2. FLASK_SECRET_KEY / SECRET_KEY env vars (recommended for prod)
-    3. Persistent secret file '.secret_key' (created once then reused by all workers)
-    4. Ephemeral random (ONLY if testing or no persistence possible)
-
-    Having a stable secret across workers avoids CSRF session token mismatches.
+    Precedence:
+      1. test_config override
+      2. Environment FLASK_SECRET_KEY / SECRET_KEY
+      3. Persistent .secret_key file (atomic create)
+      4. Ephemeral generated (tests / last resort)
     """
     global _GLOBAL_SECRET
     if _GLOBAL_SECRET:
@@ -81,7 +83,7 @@ def _get_global_secret(test_config: Optional[dict], testing: bool) -> str:
         _GLOBAL_SECRET = env_secret
         return _GLOBAL_SECRET
 
-    # 3. Persistent file (skip during tests for isolation)
+    # 3. Persistent secret file (skip when testing for isolation)
     if not testing:
         try:
             if os.path.exists(_SECRET_FILE_PATH):
@@ -90,7 +92,6 @@ def _get_global_secret(test_config: Optional[dict], testing: bool) -> str:
                 if file_secret:
                     _GLOBAL_SECRET = file_secret
                     return _GLOBAL_SECRET
-            # Create a new one atomically
             import secrets
             new_secret = secrets.token_hex(32)
             tmp_path = _SECRET_FILE_PATH + '.tmp'
@@ -100,9 +101,9 @@ def _get_global_secret(test_config: Optional[dict], testing: bool) -> str:
             _GLOBAL_SECRET = new_secret
             return _GLOBAL_SECRET
         except OSError as e:
-            current_app.logger.warning(f"Unable to load/write secret file '{_SECRET_FILE_PATH}': {e}; falling back to ephemeral.")
+            logger.warning(f"Secret file unavailable ({e}); using ephemeral secret.")
 
-    # 4. Ephemeral fallback (acceptable for tests / last resort)
+    # 4. Ephemeral fallback
     import secrets
     if os.getenv('FLASK_ENFORCE_SECRET') == '1' and not testing:
         raise RuntimeError('SECRET_KEY environment variable required (FLASK_ENFORCE_SECRET=1).')
@@ -241,6 +242,14 @@ def create_app(test_config: Optional[dict] = None) -> Flask:
     app.config.setdefault('DATA_FILE', os.path.join(os.path.dirname(__file__), 'data.json'))
     if test_config:
         app.config.update(test_config)
+
+    # Ensure Matplotlib config directory writable (defensive runtime fix)
+    mpl_dir = os.getenv('MPLCONFIGDIR')
+    if mpl_dir and not os.path.exists(mpl_dir):
+        try:
+            os.makedirs(mpl_dir, exist_ok=True)
+        except OSError as e:  # pragma: no cover
+            logger.warning(f"Unable to create MPLCONFIGDIR '{mpl_dir}': {e}")
 
     _register_routes(app)
     # Provide csrf_token helper for templates using manual forms
