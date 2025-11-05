@@ -49,9 +49,10 @@ def create_app(test_config: Optional[dict] = None) -> Flask:
     else:
         secret_key = os.getenv('FLASK_SECRET_KEY') or os.getenv('SECRET_KEY')
         if not secret_key:
-            # Allow a predictable key only when running tests; otherwise raise for security.
-            if test_config and test_config.get('TESTING'):
-                secret_key = 'test-secret'
+            # For pytest or explicit TESTING contexts generate an ephemeral secret instead of hard-coding.
+            if (test_config and test_config.get('TESTING')) or os.getenv('PYTEST_CURRENT_TEST'):
+                import secrets
+                secret_key = secrets.token_hex(32)
             else:
                 raise RuntimeError('SECRET_KEY not set. Define FLASK_SECRET_KEY or SECRET_KEY environment variable.')
     app.config['SECRET_KEY'] = secret_key
