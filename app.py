@@ -16,7 +16,7 @@ DEFAULT_DATA = {"Warm-up": [], "Workout": [], "Cool-down": []}
 
 # Cache a single SECRET_KEY value so all Gunicorn workers share it.
 _GLOBAL_SECRET: Optional[str] = None
-_SECRET_FILE_PATH = os.path.join(os.path.dirname(__file__), '.secret_key')
+# Removed persistent secret file approach to prevent race conditions across gunicorn workers.
 
 # Module-level logger (safe outside app context)
 logger = logging.getLogger(__name__)
@@ -60,53 +60,29 @@ def save_data(data):
 
 
 def _get_global_secret(test_config: Optional[dict], testing: bool) -> str:
-    """Return a multi-process stable SECRET_KEY without relying on app context.
+    """Return a stable SECRET_KEY (env or test override; ephemeral only for tests).
 
-    Precedence:
-      1. test_config override
-      2. Environment FLASK_SECRET_KEY / SECRET_KEY
-      3. Persistent .secret_key file (atomic create)
-      4. Ephemeral generated (tests / last resort)
+    Production MUST supply FLASK_SECRET_KEY or SECRET_KEY to avoid per-worker divergence.
     """
     global _GLOBAL_SECRET
     if _GLOBAL_SECRET:
         return _GLOBAL_SECRET
 
-    # 1. Explicit test override
     if test_config and test_config.get('SECRET_KEY'):
         _GLOBAL_SECRET = test_config['SECRET_KEY']
         return _GLOBAL_SECRET
 
-    # 2. Environment variables
     env_secret = os.getenv('FLASK_SECRET_KEY') or os.getenv('SECRET_KEY')
     if env_secret:
         _GLOBAL_SECRET = env_secret
         return _GLOBAL_SECRET
 
-    # 3. Persistent secret file (skip when testing for isolation)
-    if not testing:
-        try:
-            if os.path.exists(_SECRET_FILE_PATH):
-                with open(_SECRET_FILE_PATH, 'r', encoding='utf-8') as fh:
-                    file_secret = fh.read().strip()
-                if file_secret:
-                    _GLOBAL_SECRET = file_secret
-                    return _GLOBAL_SECRET
-            import secrets
-            new_secret = secrets.token_hex(32)
-            tmp_path = _SECRET_FILE_PATH + '.tmp'
-            with open(tmp_path, 'w', encoding='utf-8') as fh:
-                fh.write(new_secret)
-            os.replace(tmp_path, _SECRET_FILE_PATH)
-            _GLOBAL_SECRET = new_secret
-            return _GLOBAL_SECRET
-        except OSError as e:
-            logger.warning(f"Secret file unavailable ({e}); using ephemeral secret.")
-
-    # 4. Ephemeral fallback
     import secrets
-    if os.getenv('FLASK_ENFORCE_SECRET') == '1' and not testing:
-        raise RuntimeError('SECRET_KEY environment variable required (FLASK_ENFORCE_SECRET=1).')
+    if not testing:
+        # Enforce presence in production context
+        if os.getenv('FLASK_ENFORCE_SECRET') == '1':
+            raise RuntimeError('SECRET_KEY environment variable required (FLASK_ENFORCE_SECRET=1).')
+        logger.warning('No FLASK_SECRET_KEY provided; generating ephemeral secret (NOT recommended for multi-worker).')
     _GLOBAL_SECRET = secrets.token_hex(32)
     return _GLOBAL_SECRET
 
@@ -234,6 +210,9 @@ def create_app(test_config: Optional[dict] = None) -> Flask:
     testing = bool(test_config and test_config.get('TESTING')) or bool(os.getenv('PYTEST_CURRENT_TEST'))
     # Secret key resolved via helper; never hard-coded.
     app.config['SECRET_KEY'] = _get_global_secret(test_config, testing)  # NOSONAR env/ephemeral sourced + cached
+    app.config.setdefault('SESSION_COOKIE_SAMESITE', 'Lax')
+    app.config.setdefault('SESSION_COOKIE_HTTPONLY', True)
+    app.config.setdefault('WTF_CSRF_ENABLED', not testing)
 
     # Re-enable CSRF protection (disabled automatically when testing flag set)
     if not testing:

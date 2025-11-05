@@ -46,4 +46,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=10s CMD python -c "import
 
 # Use gunicorn for production serving (more robust than flask dev server)
 # Matplotlib charts are generated on demand; no worker class customization needed yet.
-CMD ["gunicorn", "app:create_app()", "--bind", "0.0.0.0:5000", "--workers", "3", "--timeout", "120"]
+CMD ["gunicorn", "--preload", "app:create_app()", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-"]
