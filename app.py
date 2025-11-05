@@ -5,7 +5,6 @@ import base64
 from datetime import datetime
 from threading import Lock
 from flask import Flask, render_template, request, redirect, url_for, flash, current_app
-from flask_wtf import CSRFProtect
 from matplotlib.figure import Figure
 from typing import Optional
 
@@ -29,12 +28,25 @@ def load_data():
 
 
 def save_data(data):
-    """Atomically persist workout data to configured DATA_FILE."""
+    """Atomically persist workout data to configured DATA_FILE.
+
+    Returns True on success, False if an OS error occurs (logged).
+    """
     data_file = current_app.config['DATA_FILE']
     tmp_file = data_file + ".tmp"
-    with open(tmp_file, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-    os.replace(tmp_file, data_file)
+    try:
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp_file, data_file)
+        return True
+    except OSError as e:  # pragma: no cover (hard to simulate in tests reliably)
+        current_app.logger.error(f"Failed to write data file '{data_file}': {e}")
+        try:
+            if os.path.exists(tmp_file):
+                os.remove(tmp_file)
+        except OSError:
+            pass
+        return False
 
 
 def _derive_secret(test_config: Optional[dict], testing: bool) -> str:
@@ -90,7 +102,9 @@ def _register_routes(app: Flask) -> None:
 
         with DATA_LOCK:
             data[category].append(entry)
-            save_data(data)
+            if not save_data(data):
+                flash('Failed to persist workout data (server filesystem issue).', 'error')
+                return redirect(url_for('index'))
 
         flash(f'Added {exercise} ({duration} min) to {category}!', 'success')
         return redirect(url_for('index'))
@@ -172,8 +186,7 @@ def create_app(test_config: Optional[dict] = None) -> Flask:
     # Secret key resolved via helper; never hard-coded.
     app.config['SECRET_KEY'] = _derive_secret(test_config, testing)  # NOSONAR env/ephemeral sourced
 
-    if not testing:
-        CSRFProtect(app)
+    # CSRF protection removed per user request; rely on server-side validation only.
 
     app.config.setdefault('DATA_FILE', os.path.join(os.path.dirname(__file__), 'data.json'))
     if test_config:

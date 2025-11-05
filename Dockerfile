@@ -26,11 +26,14 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY app.py ./
 COPY templates/ ./templates/
 COPY static/ ./static/
+COPY data.json ./
 
 # Set a writable HOME and Matplotlib config/cache dir to avoid runtime warnings.
 ENV HOME=/app \
     MPLCONFIGDIR=/app/.config/matplotlib
-RUN mkdir -p /app/.config/matplotlib && chown -R app:app /app/.config
+RUN mkdir -p /app/.config/matplotlib \
+    && chown -R app:app /app \
+    && chmod -R u+rw /app
 
 # Expose port (matches k8s service 5000)
 EXPOSE 5000
