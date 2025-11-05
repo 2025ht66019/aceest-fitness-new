@@ -12,24 +12,23 @@ pipeline {
         checkout scm
       }
     }
-
-    stage('Set up Python') {
+    // Consolidated test stage using Python 3.11 inside official Docker image for consistent env
+    stage('Tests (Python 3.11)') {
       steps {
-        sh 'python3 --version'
-        sh 'python3 -m venv .venv'
-        sh '. .venv/bin/activate && python -m pip install --upgrade pip'
-      }
-    }
-
-    stage('Install dependencies') {
-      steps {
-        sh '. .venv/bin/activate && pip install -r requirements.txt'
-      }
-    }
-
-    stage('Pytest with Coverage') {
-      steps {
-        sh 'export PYTHONPATH=$PWD && . .venv/bin/activate && pytest -v --cov=app --cov-report xml:coverage.xml --cov-report term-missing --junitxml=pytest-results.xml'
+        script {
+          docker.image('python:3.11-slim').inside {
+            // Show interpreter details
+            sh 'python --version'
+            sh 'python -c "import sys,platform; print(sys.executable); print(platform.platform())"'
+            // Create virtual environment (isolated inside workspace volume)
+            sh 'python -m venv .venv'
+            sh '. .venv/bin/activate && python -m pip install --upgrade pip'
+            // Install dependencies
+            sh '. .venv/bin/activate && pip install -r requirements.txt'
+            // Run tests with coverage
+            sh 'export PYTHONPATH=$PWD && . .venv/bin/activate && pytest -v --cov=app --cov-report xml:coverage.xml --cov-report term-missing --junitxml=pytest-results.xml'
+          }
+        }
       }
       post {
         always {
