@@ -156,13 +156,13 @@ pipeline {
             echo "Deploying image tag: $COMMIT_TAG"
 
             # Verify placeholder exists
-            if ! grep -q '\\${IMAGE_TAG}' k8s/aceest-fitness.yaml; then
-              echo "Placeholder \\${IMAGE_TAG} not found in k8s/aceest-fitness.yaml"
+            if ! grep -q '\\${IMAGE_TAG}' k8s/rolling-update.yaml; then
+              echo "Placeholder \\${IMAGE_TAG} not found in k8s/rolling-update.yaml"
               exit 1
             fi
 
             # Substitute placeholder and apply
-            sed -e "s|\\${IMAGE_TAG}|${COMMIT_TAG}|g" k8s/aceest-fitness.yaml | kubectl apply -f -
+            sed -e "s|\\${IMAGE_TAG}|${COMMIT_TAG}|g" k8s/rolling-update.yaml | kubectl apply -f -
 
             echo "Waiting for rollout..."
             kubectl rollout status deployment/aceest-fitness --timeout=180s
