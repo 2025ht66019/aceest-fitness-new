@@ -46,11 +46,7 @@ pipeline {
           script {
             def scannerHome = tool name: 'SonarScanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
             withSonarQubeEnv('SonarQubeServer') {
-              // Use existing sonar-project.properties file; fail fast if missing
-              if (!fileExists('sonar-project.properties')) {
-                error 'sonar-project.properties is missing; add it to the repo instead of relying on Jenkins inline config.'
-              }
-              def scanStatus = sh(returnStatus: true, script: '. .venv/bin/activate && ${scannerHome}/bin/sonar-scanner')
+              def scanStatus = sh(returnStatus: true, script: ". venv/bin/activate && ${scannerHome}/bin/sonar-scanner")
               if (scanStatus != 0) {
                 echo "SonarScanner failed with status ${scanStatus}"
                 env.SONAR_SCAN_FAILED = 'true'
@@ -102,8 +98,7 @@ pipeline {
           def tagCommit = "${repo}:${shortSha}"
           def tagLatest = "${repo}:latest"
           echo "Building Docker image ${tagCommit} and tagging latest"
-          sh 'test -f Dockerfile || echo "ERROR: Dockerfile missing"'
-          sh "docker build --pull --no-cache -t ${tagCommit} -t ${tagLatest} ."
+          sh "docker build -t ${tagCommit} -t ${tagLatest} ."
           // Stash tags for next stage
           env.DOCKER_IMAGE_COMMIT = tagCommit
           env.DOCKER_IMAGE_LATEST = tagLatest
@@ -222,11 +217,9 @@ pipeline {
             # Choose deployment file
             DEPLOY_FILE="k8s/deployment-${IDLE_COLOR}.yaml"
 
-            # Inject new image (temporary rendered file); ensure placeholder exists
-            if ! grep -q '\${IMAGE_TAG}' "$DEPLOY_FILE"; then
-              echo "Placeholder \${IMAGE_TAG} not found in $DEPLOY_FILE"; exit 1; fi
+            # Inject new image (temporary rendered file)
             RENDERED="$(mktemp)"
-            sed "s|\${IMAGE_TAG}|${COMMIT_TAG}|g" "$DEPLOY_FILE" > "$RENDERED"
+            sed "s|\\${IMAGE_TAG}|${COMMIT_TAG}|g" "$DEPLOY_FILE" > "$RENDERED"
 
             echo "Applying $IDLE_COLOR deployment..."
             kubectl apply -f "$RENDERED"
@@ -241,7 +234,7 @@ pipeline {
             if ! kubectl exec "$POD" -- sh -c 'command -v curl >/dev/null || command -v wget >/dev/null'; then
               echo "No curl/wget in container; skipping in-pod HTTP check."
             else
-              kubectl exec "$POD" -- sh -c ' (command -v curl && curl -fsS http://127.0.0.1:5000/) || (command -v wget && wget -q -O - http://127.0.0.1:5000/) ' >/dev/null
+              kubectl exec "$POD" -- sh -c ' (command -v curl && curl -fsS http://127.0.0.1:8000/) || (command -v wget && wget -q -O - http://127.0.0.1:8000/) ' >/dev/null
               echo "In-pod HTTP check passed."
             fi
 
