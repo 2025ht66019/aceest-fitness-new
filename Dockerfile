@@ -6,8 +6,9 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=off \
     POETRY_VIRTUALENVS_CREATE=false
 
-# Create non-root user
-RUN groupadd -r app && useradd -r -g app app
+# Create non-root user with stable UID/GID (matches k8s securityContext runAsUser/runAsGroup/fsGroup 1000)
+RUN groupadd -g 1000 app \
+    && useradd -u 1000 -r -g app app
 WORKDIR /app
 
 # No OS package installs: rely on manylinux wheel bundled libs for matplotlib.
@@ -33,7 +34,8 @@ ENV HOME=/app \
     MPLCONFIGDIR=/app/.config/matplotlib
 RUN mkdir -p /app/.config/matplotlib \
     && chown -R app:app /app \
-    && chmod -R u+rw /app
+    # Grant group read/write so k8s fsGroup (1000) can write even if runtime UID mismatch
+    && chmod -R ug+rw /app
 
 # Expose port (matches k8s service 5000)
 EXPOSE 5000

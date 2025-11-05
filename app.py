@@ -218,7 +218,14 @@ def create_app(test_config: Optional[dict] = None) -> Flask:
     if not testing:
         CSRFProtect(app)
 
-    app.config.setdefault('DATA_FILE', os.path.join(os.path.dirname(__file__), 'data.json'))
+    # Data file configuration: allow env override (DATA_FILE) else default under application directory.
+    default_data_path = os.path.join(os.path.dirname(__file__), 'data.json')
+    env_data_path = os.getenv('DATA_FILE')
+    app.config.setdefault('DATA_FILE', env_data_path if env_data_path else default_data_path)
+    # If directory is not writable, attempt permissive warning so user sees flash message instead of silent failure.
+    data_dir = os.path.dirname(app.config['DATA_FILE']) or '.'
+    if not os.access(data_dir, os.W_OK):  # pragma: no cover (environment dependent)
+        logger.warning(f"Data directory '{data_dir}' not writable for user; workout logs may fail to persist.")
     if test_config:
         app.config.update(test_config)
 
