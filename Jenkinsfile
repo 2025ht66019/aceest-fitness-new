@@ -122,18 +122,35 @@ pipeline {
       }
     }
     stage('Ensure Secret') {
-  steps {
-    withCredentials([string(credentialsId: 'flask-secret-key', variable: 'FLASK_SECRET_KEY')]) {
-      sh '''
-        set -e
-        if ! kubectl get secret aceest-fitness-secret >/dev/null 2>&1; then
-          kubectl create secret generic aceest-fitness-secret \
-            --from-literal=FLASK_SECRET_KEY="$FLASK_SECRET_KEY"
-          echo "Created aceest-fitness-secret from Jenkins credentials."
-        else
-          echo "Secret already exists; not recreating."
-        fi
-      '''
+      steps {
+        script {
+          // Attempt to load credential if it exists; fall back to generated secret if not.
+          def haveCred = false
+          try {
+            withCredentials([string(credentialsId: 'flask-secret-key', variable: 'FLASK_SECRET_KEY')]) {
+              haveCred = (env.FLASK_SECRET_KEY?.trim())
+            }
+          } catch (ignored) {
+            echo "Credential 'flask-secret-key' not found; will generate one-time secret (consider adding a managed credential)."
+          }
+          sh '''
+            set -e
+            if [ -z "$FLASK_SECRET_KEY" ]; then
+              echo "Generating ephemeral FLASK_SECRET_KEY (not ideal for session persistence)."
+              FLASK_SECRET_KEY=$(python - <<'PY'
+import secrets; print(secrets.token_hex(48))
+PY
+)
+              export FLASK_SECRET_KEY
+            fi
+            if ! kubectl get secret aceest-fitness-secret >/dev/null 2>&1; then
+              kubectl create secret generic aceest-fitness-secret \
+                --from-literal=FLASK_SECRET_KEY="$FLASK_SECRET_KEY"
+              echo "Created aceest-fitness-secret (source: ${FLASK_SECRET_KEY_SOURCE:-auto})."
+            else
+              echo "Secret aceest-fitness-secret already exists; leaving unchanged."
+            fi
+          '''
         }
       }
     }
