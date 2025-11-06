@@ -7,9 +7,29 @@ pipeline {
   }
 
   stages {
+    stage('Net Diagnostics') {
+      steps {
+        sh '''
+          set -e
+          echo '--- Network / DNS diagnostics ---'
+          echo '[resolv.conf]'; cat /etc/resolv.conf || true
+          echo '[nslookup github.com]'; (nslookup github.com || dig +short github.com || getent hosts github.com || true)
+          echo '[curl github.com head]'; (curl -Is https://github.com | head -n1 || true)
+        '''
+      }
+    }
     stage('Checkout') {
       steps {
-        checkout scm
+        script {
+          retry(3) {
+            checkout([
+              $class: 'GitSCM',
+              branches: [[name: '*/dev']],
+              userRemoteConfigs: [[url: 'https://github.com/2025ht66019/aceest-fitness-new.git']],
+              extensions: [[$class: 'CloneOption', depth: 1, shallow: true, timeout: 10]]
+            ])
+          }
+        }
       }
     }
 
@@ -154,13 +174,16 @@ PY
               echo "ERROR: FLASK_SECRET_KEY empty after generation attempt" >&2
               exit 1
             fi
-            # Detect existing secret with empty FLASK_SECRET_KEY value and regenerate.
+            # Detect existing secret with empty/missing FLASK_SECRET_KEY value and regenerate.
             existing_base64=$(kubectl get secret aceest-fitness-secret -o jsonpath='{.data.FLASK_SECRET_KEY}' 2>/dev/null || true)
-            if [ -n "$existing_base64" ]; then
+            if [ -z "$existing_base64" ]; then
+              echo "Existing secret missing or empty FLASK_SECRET_KEY data; deleting for recreation." >&2
+              kubectl delete secret aceest-fitness-secret >/dev/null 2>&1 || true
+            else
               decoded=$(echo "$existing_base64" | base64 --decode 2>/dev/null || true)
               if [ -z "$decoded" ]; then
-                echo "Existing secret aceest-fitness-secret has EMPTY FLASK_SECRET_KEY; replacing with generated value." >&2
-                kubectl delete secret aceest-fitness-secret || true
+                echo "Existing secret FLASK_SECRET_KEY decodes to empty; deleting for recreation." >&2
+                kubectl delete secret aceest-fitness-secret >/dev/null 2>&1 || true
               fi
             fi
             if ! kubectl get secret aceest-fitness-secret >/dev/null 2>&1; then
