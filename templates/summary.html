@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>📋 Weekly Session Summary</h1>
+{% set any_sessions = false %}
+{% for category, sessions in data.items() %}
+  <section class="card">
+    <h2>{{ category }}</h2>
+    {% if sessions %}
+      <ol class="session-list">
+        {% for s in sessions %}
+          {% set any_sessions = true %}
+          <li><strong>{{ s.exercise }}</strong> - {{ s.duration }} min <span class="timestamp">({{ s.timestamp.split(' ')[0] }})</span></li>
+        {% endfor %}
+      </ol>
+    {% else %}
+      <p class="empty">No sessions recorded.</p>
+    {% endif %}
+  </section>
+{% endfor %}
+<section class="card total">
+  <h2>Total Time Spent</h2>
+  <p class="total-minutes">{{ total_time }} minutes</p>
+</section>
+{% if not any_sessions %}
+<p class="empty big">No workouts logged yet. Head to Log Workouts!</p>
+{% endif %}
+{% endblock %}
