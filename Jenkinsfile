@@ -137,11 +137,22 @@ pipeline {
             set -e
             if [ -z "$FLASK_SECRET_KEY" ]; then
               echo "Generating ephemeral FLASK_SECRET_KEY (not ideal for session persistence)."
-              FLASK_SECRET_KEY=$(python - <<'PY'
+              if command -v python3 >/dev/null 2>&1; then
+                FLASK_SECRET_KEY=$(python3 - <<'PY'
 import secrets; print(secrets.token_hex(48))
 PY
 )
+              elif command -v openssl >/dev/null 2>&1; then
+                FLASK_SECRET_KEY=$(openssl rand -hex 48)
+              else
+                echo "ERROR: Neither python3 nor openssl available to generate secret" >&2
+                exit 1
+              fi
               export FLASK_SECRET_KEY
+            fi
+            if [ -z "$FLASK_SECRET_KEY" ]; then
+              echo "ERROR: FLASK_SECRET_KEY empty after generation attempt" >&2
+              exit 1
             fi
             if ! kubectl get secret aceest-fitness-secret >/dev/null 2>&1; then
               kubectl create secret generic aceest-fitness-secret \
