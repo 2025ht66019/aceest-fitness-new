@@ -1,9 +1,6 @@
 {% extends 'base.html' %}
 {% block content %}
 <h1>📋 Weekly Session Summary</h1>
-{% if total_calories is defined %}
-<p><strong>Total Calories Burned:</strong> {{ '%.1f'|format(total_calories) }} kcal</p>
-{% endif %}
 {% set any_sessions = false %}
 {% for category, sessions in data.items() %}
   <section class="card">
@@ -12,7 +9,7 @@
       <ol class="session-list">
         {% for s in sessions %}
           {% set any_sessions = true %}
-          <li><strong>{{ s.exercise }}</strong> - {{ s.duration }} min{% if s.calories is defined %} / {{ '%.1f'|format(s.calories) }} kcal{% endif %} <span class="timestamp">({{ s.timestamp.split(' ')[0] }})</span></li>
+          <li><strong>{{ s.exercise }}</strong> - {{ s.duration }} min <span class="timestamp">({{ s.timestamp.split(' ')[0] }})</span></li>
         {% endfor %}
       </ol>
     {% else %}

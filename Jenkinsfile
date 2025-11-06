@@ -7,29 +7,9 @@ pipeline {
   }
 
   stages {
-    stage('Net Diagnostics') {
-      steps {
-        sh '''
-          set -e
-          echo '--- Network / DNS diagnostics ---'
-          echo '[resolv.conf]'; cat /etc/resolv.conf || true
-          echo '[nslookup github.com]'; (nslookup github.com || dig +short github.com || getent hosts github.com || true)
-          echo '[curl github.com head]'; (curl -Is https://github.com | head -n1 || true)
-        '''
-      }
-    }
     stage('Checkout') {
       steps {
-        script {
-          retry(3) {
-            checkout([
-              $class: 'GitSCM',
-              branches: [[name: '*/dev']],
-              userRemoteConfigs: [[url: 'https://github.com/2025ht66019/aceest-fitness-new.git']],
-              extensions: [[$class: 'CloneOption', depth: 1, shallow: true, timeout: 10]]
-            ])
-          }
-        }
+        checkout scm
       }
     }
 
@@ -142,61 +122,19 @@ pipeline {
       }
     }
     stage('Ensure Secret') {
-      steps {
-        script {
-          // Attempt to load credential if it exists; fall back to generated secret if not.
-          def haveCred = false
-          try {
-            withCredentials([string(credentialsId: 'flask-secret-key', variable: 'FLASK_SECRET_KEY')]) {
-              haveCred = (env.FLASK_SECRET_KEY?.trim())
-            }
-          } catch (ignored) {
-            echo "Credential 'flask-secret-key' not found; will generate one-time secret (consider adding a managed credential)."
-          }
-          sh '''
-            set -e
-            if [ -z "$FLASK_SECRET_KEY" ]; then
-              echo "Generating ephemeral FLASK_SECRET_KEY (not ideal for session persistence)."
-              if command -v python3 >/dev/null 2>&1; then
-                FLASK_SECRET_KEY=$(python3 - <<'PY'
-import secrets; print(secrets.token_hex(48))
-PY
-)
-              elif command -v openssl >/dev/null 2>&1; then
-                FLASK_SECRET_KEY=$(openssl rand -hex 48)
-              else
-                echo "ERROR: Neither python3 nor openssl available to generate secret" >&2
-                exit 1
-              fi
-              export FLASK_SECRET_KEY
-            fi
-            if [ -z "$FLASK_SECRET_KEY" ]; then
-              echo "ERROR: FLASK_SECRET_KEY empty after generation attempt" >&2
-              exit 1
-            fi
-            # Detect existing secret with empty/missing FLASK_SECRET_KEY value and regenerate.
-            existing_base64=$(kubectl get secret aceest-fitness-secret -o jsonpath='{.data.FLASK_SECRET_KEY}' 2>/dev/null || true)
-            if [ -z "$existing_base64" ]; then
-              echo "Existing secret missing or empty FLASK_SECRET_KEY data; deleting for recreation." >&2
-              kubectl delete secret aceest-fitness-secret >/dev/null 2>&1 || true
-            else
-              decoded=$(echo "$existing_base64" | base64 --decode 2>/dev/null || true)
-              if [ -z "$decoded" ]; then
-                echo "Existing secret FLASK_SECRET_KEY decodes to empty; deleting for recreation." >&2
-                kubectl delete secret aceest-fitness-secret >/dev/null 2>&1 || true
-              fi
-            fi
-            if ! kubectl get secret aceest-fitness-secret >/dev/null 2>&1; then
-              kubectl create secret generic aceest-fitness-secret \
-                --from-literal=FLASK_SECRET_KEY="$FLASK_SECRET_KEY"
-              echo "Created aceest-fitness-secret (source: ${FLASK_SECRET_KEY_SOURCE:-auto})."
-            else
-              echo "Secret aceest-fitness-secret already exists; leaving unchanged."
-            fi
-          '''
-        }
-      }
+  steps {
+    sh '''
+      set -e
+      if ! kubectl get secret aceest-fitness-secret >/dev/null 2>&1; then
+        kubectl create secret generic aceest-fitness-secret \
+          --from-literal=FLASK_SECRET_KEY=$(python -c 'import secrets; print(secrets.token_hex(48))')
+        echo "Created aceest-fitness-secret."
+      else
+        echo "Secret already exists; leaving it untouched."
+      fi
+    '''
     }
+  }
     stage('Deploy to Minikube') {
       when {
         expression { return env.DOCKER_IMAGE_LATEST }
