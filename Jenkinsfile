@@ -123,18 +123,20 @@ pipeline {
     }
     stage('Ensure Secret') {
   steps {
-    sh '''
-      set -e
-      if ! kubectl get secret aceest-fitness-secret >/dev/null 2>&1; then
-        kubectl create secret generic aceest-fitness-secret \
-          --from-literal=FLASK_SECRET_KEY=$(python -c 'import secrets; print(secrets.token_hex(48))')
-        echo "Created aceest-fitness-secret."
-      else
-        echo "Secret already exists; leaving it untouched."
-      fi
-    '''
+    withCredentials([string(credentialsId: 'flask-secret-key', variable: 'FLASK_SECRET_KEY')]) {
+      sh '''
+        set -e
+        if ! kubectl get secret aceest-fitness-secret >/dev/null 2>&1; then
+          kubectl create secret generic aceest-fitness-secret \
+            --from-literal=FLASK_SECRET_KEY="$FLASK_SECRET_KEY"
+          echo "Created aceest-fitness-secret from Jenkins credentials."
+        else
+          echo "Secret already exists; not recreating."
+        fi
+      '''
+        }
+      }
     }
-  }
     stage('Deploy to Minikube') {
       when {
         expression { return env.DOCKER_IMAGE_LATEST }

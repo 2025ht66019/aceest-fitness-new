@@ -18,7 +18,7 @@ from flask import (
     make_response,
 )
 from flask_wtf import CSRFProtect
-from flask_wtf.csrf import generate_csrf
+from flask_wtf.csrf import generate_csrf, CSRFError
 from matplotlib.figure import Figure
 from reportlab.pdfgen import canvas as pdf_canvas
 from reportlab.lib.pagesizes import A4
@@ -468,4 +468,32 @@ if __name__ == "__main__":
     host = os.environ.get("FLASK_HOST", "127.0.0.1")
     port = int(os.environ.get("FLASK_PORT", 5000))
     debug = os.environ.get("FLASK_DEBUG", "true").lower() == "true"
-    create_app({'DEBUG': debug}).run(host=host, port=port, debug=debug)
+    # Use already constructed global app; avoid creating a second instance which
+    # breaks CSRF session consistency and can trigger missing token errors.
+    app.config['DEBUG'] = debug
+    app.run(host=host, port=port, debug=debug)
+
+# --- Security & CSRF helpers (defined after final app instance) ---
+@app.before_request
+def ensure_csrf_seed():  # pragma: no cover (simple session seeding)
+    """Force CSRF token generation on GET requests so the session cookie exists
+    before a user submits a form, reducing 'missing CSRF token' errors behind proxies."""
+    if request.method == 'GET':
+        # generate_csrf creates token & ensures session cookie; ignore return value.
+        try:
+            generate_csrf()
+        except Exception:  # pragma: no cover – defensive, should not occur
+            pass
+
+@app.after_request
+def secure_headers(resp):  # pragma: no cover (header setting)
+    resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    resp.headers.setdefault('Cache-Control', 'no-store')
+    resp.headers.setdefault('Pragma', 'no-cache')
+    return resp
+
+@app.errorhandler(CSRFError)
+def handle_csrf_error(e):  # pragma: no cover (error path)
+    current_app.logger.warning(f'CSRF failure: {e.description}')
+    flash('Security validation failed. Please reload the page.', 'error')
+    return redirect(url_for('index')), 400
