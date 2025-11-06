@@ -399,6 +399,10 @@ def export_pdf():
     c.save()
     return send_file(tmp_path, as_attachment=True, download_name=filename)
 
+def healthz():
+    """Lightweight health check endpoint for Kubernetes probes."""
+    return 'ok', 200
+
 def register_routes(app: Flask) -> None:
     """Lightweight route registrar to keep cognitive complexity minimal."""
     app.add_url_rule('/', 'index', index, methods=['GET'])
@@ -410,6 +414,7 @@ def register_routes(app: Flask) -> None:
     app.add_url_rule('/diet', 'diet', diet, methods=['GET'])
     app.add_url_rule('/progress', 'progress', progress, methods=['GET'])
     app.add_url_rule('/export', 'export_pdf', export_pdf, methods=['GET'])
+    app.add_url_rule('/healthz', 'healthz', healthz, methods=['GET'])
 
 
 def create_app(test_config: Optional[dict] = None) -> Flask:
