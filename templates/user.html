@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block content %}
 <h1>📝 User Information</h1>
-<form method="post" action="{{ url_for('user_info') }}" class="card">
+<form method="post" action="{{ url_for('user_save') }}" class="card">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
   <div class="form-group">
     <label for="name">Name</label>

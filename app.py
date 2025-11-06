@@ -28,6 +28,7 @@ from reportlab.lib import colors as rl_colors
 DATA_LOCK = Lock()
 DEFAULT_DATA = {"Warm-up": [], "Workout": [], "Cool-down": []}
 DEFAULT_USER_INFO = {}
+USER_LOCK = Lock()
 
 # MET values (approx.) for calorie estimation per category
 MET_VALUES = {
@@ -145,6 +146,57 @@ def _get_global_secret(test_config: Optional[dict], testing: bool) -> str:
 def _register_routes(app: Flask) -> None:
     """Attach route view functions to app (isolated for lower complexity)."""
 
+    def _validate_user_form(form) -> tuple[list, dict]:
+        """Validate and sanitize user form input; returns (errors, cleaned_data)."""
+        import re
+        errors: list[str] = []
+        cleaner = lambda s: re.sub(r'[\x00-\x1f\x7f]', '', s.strip())
+        name = cleaner(form.get('name', ''))
+        regn_id = cleaner(form.get('regn_id', ''))
+        age_str = form.get('age', '').strip()
+        gender = cleaner(form.get('gender', '')).upper()
+        height_str = form.get('height', '').strip()
+        weight_str = form.get('weight', '').strip()
+        try:
+            age = int(age_str)
+            if not (1 <= age <= 120):
+                errors.append('Age out of range (1-120).')
+            height_cm = float(height_str)
+            if not (50 <= height_cm <= 250):
+                errors.append('Height out of range (50-250 cm).')
+            weight_kg = float(weight_str)
+            if not (20 <= weight_kg <= 400):
+                errors.append('Weight out of range (20-400 kg).')
+        except ValueError:
+            errors.append('Numeric field parsing failed.')
+            height_cm = 0.0
+            weight_kg = 0.0
+            age = 0
+        if gender not in {'M','F'}:
+            errors.append('Gender must be M or F.')
+        if len(name) > 100:
+            errors.append('Name too long (>100).')
+        if len(regn_id) > 50:
+            errors.append('Regn-ID too long (>50).')
+        if errors:
+            return errors, {}
+        bmi = weight_kg / ((height_cm/100)**2)
+        if gender == 'M':
+            bmr = 10*weight_kg + 6.25*height_cm - 5*age + 5
+        else:
+            bmr = 10*weight_kg + 6.25*height_cm - 5*age - 161
+        return errors, {
+            'name': name,
+            'regn_id': regn_id,
+            'age': age,
+            'gender': gender,
+            'height': height_cm,
+            'weight': weight_kg,
+            'bmi': bmi,
+            'bmr': bmr,
+            'weekly_cal_goal': 2000,
+        }
+
     @app.route('/', methods=['GET'])
     def index():
         data = load_data()
@@ -152,47 +204,25 @@ def _register_routes(app: Flask) -> None:
         user = load_user_info()
         return render_template('index.html', categories=categories, user=user)
 
-    @app.route('/user', methods=['GET', 'POST'])
+    @app.route('/user', methods=['GET'])
     def user_info():
+        """GET-only endpoint (safe) to view persisted user information."""
         user = load_user_info()
-        if request.method == 'POST':
-            name = request.form.get('name', '').strip()
-            regn_id = request.form.get('regn_id', '').strip()
-            age_str = request.form.get('age', '').strip()
-            gender = request.form.get('gender', '').strip().upper()
-            height_str = request.form.get('height', '').strip()
-            weight_str = request.form.get('weight', '').strip()
-            try:
-                age = int(age_str)
-                height_cm = float(height_str)
-                weight_kg = float(weight_str)
-                if gender not in {'M','F'}:
-                    raise ValueError('Gender must be M or F')
-                bmi = weight_kg / ((height_cm/100)**2)
-                if gender == 'M':
-                    bmr = 10*weight_kg + 6.25*height_cm - 5*age + 5
-                else:
-                    bmr = 10*weight_kg + 6.25*height_cm - 5*age - 161
-            except Exception as e:
-                flash(f'Invalid input: {e}', 'error')
-                return redirect(url_for('user_info'))
-            user = {
-                'name': name,
-                'regn_id': regn_id,
-                'age': age,
-                'gender': gender,
-                'height': height_cm,
-                'weight': weight_kg,
-                'bmi': bmi,
-                'bmr': bmr,
-                'weekly_cal_goal': 2000,
-            }
+        return render_template('user.html', user=user)
+
+    @app.route('/user/save', methods=['POST'])
+    def user_save():
+        """POST-only endpoint (unsafe/write) for updating user information."""
+        errors, user = _validate_user_form(request.form)
+        if errors:
+            flash('; '.join(errors), 'error')
+            return redirect(url_for('user_info'))
+        with USER_LOCK:
             if save_user_info(user):
-                flash(f'User info saved! BMI={bmi:.1f}, BMR={bmr:.0f} kcal/day', 'success')
+                flash(f"User info saved! BMI={user['bmi']:.1f}, BMR={user['bmr']:.0f} kcal/day", 'success')
             else:
                 flash('Failed to persist user info.', 'error')
-            return redirect(url_for('user_info'))
-        return render_template('user.html', user=user)
+        return redirect(url_for('user_info'))
 
     def _calc_calories(category: str, duration: int, user: dict) -> float:
         weight = user.get('weight', 70)  # fallback weight if user not set
