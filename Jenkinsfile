@@ -154,6 +154,15 @@ PY
               echo "ERROR: FLASK_SECRET_KEY empty after generation attempt" >&2
               exit 1
             fi
+            # Detect existing secret with empty FLASK_SECRET_KEY value and regenerate.
+            existing_base64=$(kubectl get secret aceest-fitness-secret -o jsonpath='{.data.FLASK_SECRET_KEY}' 2>/dev/null || true)
+            if [ -n "$existing_base64" ]; then
+              decoded=$(echo "$existing_base64" | base64 --decode 2>/dev/null || true)
+              if [ -z "$decoded" ]; then
+                echo "Existing secret aceest-fitness-secret has EMPTY FLASK_SECRET_KEY; replacing with generated value." >&2
+                kubectl delete secret aceest-fitness-secret || true
+              fi
+            fi
             if ! kubectl get secret aceest-fitness-secret >/dev/null 2>&1; then
               kubectl create secret generic aceest-fitness-secret \
                 --from-literal=FLASK_SECRET_KEY="$FLASK_SECRET_KEY"
