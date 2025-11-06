@@ -142,19 +142,46 @@ def _register_routes(app: Flask) -> None:
 
     @app.route('/plan')
     def plan():
+        # Updated to match enhanced GUI workout plan detail (ACEest FitnessTrackerApp)
         chart_data = {
-            'Warm-up (5-10 min)': ['5 min light cardio (Jog/Cycle)', 'Jumping Jacks (30 reps)', 'Arm Circles (15 Fwd/Bwd)'],
-            'Strength Workout (45-60 min)': ['Push-ups (3 sets of 10-15)', 'Squats (3 sets of 15-20)', 'Plank (3 sets of 60 seconds)', 'Lunges (3 sets of 10/leg)'],
-            'Cool-down (5 min)': ['Slow Walking', 'Static Stretching (Hold 30s each)', 'Deep Breathing Exercises']
+            'Warm-up (5-10 min)': [
+                '5 min light cardio (Jog/Cycle) to raise heart rate.',
+                'Jumping Jacks (30 reps) for dynamic mobility.',
+                'Arm Circles (15 Fwd/Bwd) to prepare shoulders.'
+            ],
+            'Strength & Cardio (45-60 min)': [
+                'Push-ups (3 sets of 10-15) - Upper body strength.',
+                'Squats (3 sets of 15-20) - Lower body foundation.',
+                'Plank (3 sets of 60 seconds) - Core stabilization.',
+                'Lunges (3 sets of 10/leg) - Balance and leg development.'
+            ],
+            'Cool-down (5 min)': [
+                'Slow Walking - Bring heart rate down gradually.',
+                'Static Stretching (Hold 30s each) - Focus on major muscle groups.',
+                'Deep Breathing Exercises - Aid recovery and relaxation.'
+            ]
         }
         return render_template('plan.html', chart_data=chart_data)
 
     @app.route('/diet')
     def diet():
+        # Updated diet guide to reflect GUI nutritional goal setting details.
         diet_plans = {
-            'Weight Loss': ['Breakfast: Oatmeal with Berries', 'Lunch: Grilled Chicken/Tofu Salad', 'Dinner: Vegetable Soup with Lentils'],
-            'Muscle Gain': ['Breakfast: 3 Egg Omelet, Spinach, Whole-wheat Toast', 'Lunch: Chicken Breast, Quinoa, and Steamed Veggies', 'Post-Workout: Protein Shake, Greek Yogurt'],
-            'Endurance Focus': ['Pre-Workout: Banana & Peanut Butter', 'Lunch: Whole Grain Pasta with Light Sauce', 'Dinner: Salmon & Avocado Salad']
+            '🎯 Weight Loss Focus (Calorie Deficit)': [
+                'Breakfast: Oatmeal with Berries (High Fiber).',
+                'Lunch: Grilled Chicken/Tofu Salad (Lean Protein).',
+                'Dinner: Vegetable Soup with Lentils (Low Calorie, High Volume).'
+            ],
+            '💪 Muscle Gain Focus (High Protein)': [
+                'Breakfast: 3 Egg Omelet, Spinach, Whole-wheat Toast (Protein/Carb combo).',
+                'Lunch: Chicken Breast, Quinoa, and Steamed Veggies (Balanced Meal).',
+                'Post-Workout: Protein Shake & Greek Yogurt (Immediate Recovery).'
+            ],
+            '🏃 Endurance Focus (Complex Carbs)': [
+                'Pre-Workout: Banana & Peanut Butter (Quick Energy).',
+                'Lunch: Whole Grain Pasta with Light Sauce (Sustainable Carbs).',
+                'Dinner: Salmon & Avocado Salad (Omega-3s and Healthy Fats).'
+            ]
         }
         return render_template('diet.html', diet_plans=diet_plans)
 
