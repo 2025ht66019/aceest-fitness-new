@@ -47,6 +47,12 @@ spec:
                 secretKeyRef:
                   name: aceest-fitness-secret
                   key: FLASK_SECRET_KEY
+            # Enforce presence of a provided secret key in production. If the
+            # secret is missing (e.g., typo in secret name / key), the app will
+            # raise at startup instead of silently generating an ephemeral key,
+            # which previously caused cross-pod CSRF/session mismatches.
+            - name: FLASK_ENFORCE_SECRET
+              value: "1"
           readinessProbe:
             httpGet:
               path: /healthz
