@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ACEest Fitness Tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <nav class="nav-bar">
+    <div class="brand">ACEest Fitness</div>
+    <ul>
+      <li><a href="{{ url_for('index') }}">Log Workouts</a></li>
+      <li><a href="{{ url_for('plan') }}">Workout Plan</a></li>
+      <li><a href="{{ url_for('diet') }}">Diet Guide</a></li>
+      <li><a href="{{ url_for('summary') }}">Summary</a></li>
+      <li><a href="{{ url_for('progress') }}">Progress</a></li>
+    </ul>
+  </nav>
+  <main class="container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-wrapper">
+          {% for category, message in messages %}
+            <div class="flash flash-{{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="footer">&copy; {{ 2025 }} ACEest Fitness Tracker</footer>
+</body>
+</html>

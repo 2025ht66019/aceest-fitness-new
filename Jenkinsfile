@@ -121,168 +121,182 @@ pipeline {
         }
       }
     }
-    // stage('Deploy to Minikube') {
-    //   when {
-    //     expression { return env.DOCKER_IMAGE_LATEST }
-    //   }
-    //   steps {
-    //     script {
-    //       try {
-    //       sh '''
-    //         set -e
-    //         echo "Validating kubectl and minikube availability..."
-    //         command -v kubectl >/dev/null || { echo "kubectl not found"; exit 1; }
-    //         command -v minikube >/dev/null || { echo "minikube not found"; exit 1; }
-    //         echo "Ensuring minikube running..."
-    //         if ! minikube status >/dev/null 2>&1; then
-    //           minikube start --memory=2048 --cpus=2
-    //         fi
-
-    //         COMMIT_TAG="${DOCKER_IMAGE_COMMIT##*:}"
-    //         echo "Deploying image tag: $COMMIT_TAG"
-
-    //         # Verify placeholder exists
-    //         if ! grep -q '\\${IMAGE_TAG}' k8s/canary-deployment.yaml; then
-    //           echo "Placeholder \\${IMAGE_TAG} not found in k8s/canary-deployment.yaml"
-    //           exit 1
-    //         fi
-
-    //         # Substitute placeholder and apply
-    //         sed -e "s|\\${IMAGE_TAG}|${COMMIT_TAG}|g" k8s/canary-deployment.yaml | kubectl apply -f -
-
-    //         echo "Waiting for rollout..."
-    //         kubectl rollout status deployment/aceest-fitness --timeout=180s
-
-    //         echo "Current deployed image:"
-    //         kubectl get deploy aceest-fitness -o jsonpath='{.spec.template.spec.containers[0].image}'; echo
-
-    //         echo "Service URL(s):"
-    //         NODE_IP=$(minikube ip)
-    //         NODE_PORT=$(kubectl get svc aceest-fitness -o jsonpath='{.spec.ports[0].nodePort}')
-    //         echo "http://${NODE_IP}:${NODE_PORT}"
-    //         echo "minikube service aceest-fitness --url"
-    //       '''
-    //      } catch (err) {
-    //       echo "Deployment failed! Rolling back..."
-    //       sh '''
-    //         kubectl rollout undo deployment/aceest-fitness-canary
-    //       '''
-    //       error "Rollback executed due to deployment failure."
-    //     }
-    //   } 
-    //   }
-    // }
-    stage('Blue-Green Deploy') {
+    stage('Ensure Secret') {
+  steps {
+    sh '''
+      set -e
+      if ! kubectl get secret aceest-fitness-secret >/dev/null 2>&1; then
+        kubectl create secret generic aceest-fitness-secret \
+          --from-literal=FLASK_SECRET_KEY=$(python -c 'import secrets; print(secrets.token_hex(48))')
+        echo "Created aceest-fitness-secret."
+      else
+        echo "Secret already exists; leaving it untouched."
+      fi
+    '''
+    }
+  }
+    stage('Deploy to Minikube') {
       when {
-        expression { return env.DOCKER_IMAGE_COMMIT }
+        expression { return env.DOCKER_IMAGE_LATEST }
       }
       steps {
         script {
+          try {
           sh '''
             set -e
-
-            echo "Checking kubectl / minikube..."
-            command -v kubectl >/dev/null
-            command -v minikube >/dev/null
+            echo "Validating kubectl and minikube availability..."
+            command -v kubectl >/dev/null || { echo "kubectl not found"; exit 1; }
+            command -v minikube >/dev/null || { echo "minikube not found"; exit 1; }
+            echo "Ensuring minikube running..."
             if ! minikube status >/dev/null 2>&1; then
               minikube start --memory=2048 --cpus=2
             fi
 
-            IMAGE_FULL="${DOCKER_IMAGE_COMMIT}"
-            COMMIT_TAG="${IMAGE_FULL##*:}"
+            COMMIT_TAG="${DOCKER_IMAGE_COMMIT##*:}"
+            echo "Deploying image tag: $COMMIT_TAG"
 
-            # Ensure base manifests exist
-            test -f k8s/deployment-blue.yaml
-            test -f k8s/deployment-green.yaml
-            test -f k8s/service.yaml
-
-            # Apply service if first time
-            if ! kubectl get svc aceest-fitness >/dev/null 2>&1; then
-              kubectl apply -f k8s/service.yaml
-              echo "Service created."
-            fi
-
-            # Determine active color (from service selector)
-            ACTIVE_COLOR=$(kubectl get svc aceest-fitness -o jsonpath='{.spec.selector.color}')
-            if [ -z "$ACTIVE_COLOR" ]; then
-              ACTIVE_COLOR=blue
-            fi
-            if [ "$ACTIVE_COLOR" = "blue" ]; then
-              IDLE_COLOR=green
-            else
-              IDLE_COLOR=blue
-            fi
-            echo "Active color: $ACTIVE_COLOR  Idle (target) color: $IDLE_COLOR"
-
-            # Choose deployment file
-            DEPLOY_FILE="k8s/deployment-${IDLE_COLOR}.yaml"
-
-            # Inject new image (temporary rendered file)
-            RENDERED="$(mktemp)"
-            sed "s|\\${IMAGE_TAG}|${COMMIT_TAG}|g" "$DEPLOY_FILE" > "$RENDERED"
-
-            echo "Applying $IDLE_COLOR deployment..."
-            kubectl apply -f "$RENDERED"
-
-            echo "Waiting for pods (${IDLE_COLOR}) to become Ready..."
-            kubectl rollout status deployment/aceest-fitness-${IDLE_COLOR} --timeout=180s
-
-            # Basic health check (hit root path of one pod)
-            POD=$(kubectl get pods -l app=aceest-fitness,color=${IDLE_COLOR} -o jsonpath='{.items[0].metadata.name}')
-            echo "Health check on pod $POD"
-            # Try via 'kubectl exec' curl; if container lacks curl, fallback to wget
-            if ! kubectl exec "$POD" -- sh -c 'command -v curl >/dev/null || command -v wget >/dev/null'; then
-              echo "No curl/wget in container; skipping in-pod HTTP check."
-            else
-              kubectl exec "$POD" -- sh -c ' (command -v curl && curl -fsS http://127.0.0.1:8000/) || (command -v wget && wget -q -O - http://127.0.0.1:8000/) ' >/dev/null
-              echo "In-pod HTTP check passed."
-            fi
-
-            echo "Switching Service selector to $IDLE_COLOR..."
-            kubectl set selector service/aceest-fitness app=aceest-fitness,color=${IDLE_COLOR}
-
-            echo "Verifying switch..."
-            NEW_COLOR=$(kubectl get svc aceest-fitness -o jsonpath='{.spec.selector.color}')
-            if [ "$NEW_COLOR" != "$IDLE_COLOR" ]; then
-              echo "Service switch failed."
+            # Verify placeholder exists
+            if ! grep -q '\\${IMAGE_TAG}' k8s/rolling-update.yaml; then
+              echo "Placeholder \\${IMAGE_TAG} not found in k8s/rolling-update.yaml"
               exit 1
             fi
 
-            echo "Blue-Green switch complete. Old color = $ACTIVE_COLOR; new live = $IDLE_COLOR"
+            # Substitute placeholder and apply
+            sed -e "s|\\${IMAGE_TAG}|${COMMIT_TAG}|g" k8s/rolling-update.yaml | kubectl apply -f -
 
-            echo "Optional: scale down old deployment after grace period."
-            kubectl scale deployment/aceest-fitness-${ACTIVE_COLOR} --replicas=0 || true
+            echo "Waiting for rollout..."
+            kubectl rollout status deployment/aceest-fitness --timeout=180s
 
+            echo "Current deployed image:"
+            kubectl get deploy aceest-fitness -o jsonpath='{.spec.template.spec.containers[0].image}'; echo
+
+            echo "Service URL(s):"
             NODE_IP=$(minikube ip)
             NODE_PORT=$(kubectl get svc aceest-fitness -o jsonpath='{.spec.ports[0].nodePort}')
-            echo "App URL: http://${NODE_IP}:${NODE_PORT}"
+            echo "http://${NODE_IP}:${NODE_PORT}"
+            echo "minikube service aceest-fitness --url"
           '''
+         } catch (err) {
+          echo "Deployment failed! Rolling back..."
+          sh '''
+            kubectl rollout undo deployment/aceest-fitness
+          '''
+          error "Rollback executed due to deployment failure."
         }
-      }
-      post {
-        failure {
-          script {
-            echo "Blue-Green deployment failed. Attempting rollback..."
-            sh '''
-              set -e
-              if kubectl get svc aceest-fitness >/dev/null 2>&1; then
-                PREV_COLOR=$(kubectl get svc aceest-fitness -o jsonpath='{.spec.selector.color}')
-                # Determine other color to rollback to
-                if [ "$PREV_COLOR" = "blue" ]; then
-                  TARGET=green
-                else
-                  TARGET=blue
-                fi
-                if kubectl get deployment aceest-fitness-${TARGET} >/dev/null 2>&1; then
-                  echo "Rollback: switching service back to ${TARGET}"
-                  kubectl set selector service/aceest-fitness app=aceest-fitness,color=${TARGET} || true
-                fi
-              fi
-            '''
-          }
-        }
+       } 
       }
     }
+    // stage('Blue-Green Deploy') {
+    //   when {
+    //     expression { return env.DOCKER_IMAGE_COMMIT }
+    //   }
+    //   steps {
+    //     script {
+    //       sh '''
+    //         set -e
+
+    //         echo "Checking kubectl / minikube..."
+    //         command -v kubectl >/dev/null
+    //         command -v minikube >/dev/null
+    //         if ! minikube status >/dev/null 2>&1; then
+    //           minikube start --memory=2048 --cpus=2
+    //         fi
+
+    //         IMAGE_FULL="${DOCKER_IMAGE_COMMIT}"
+    //         COMMIT_TAG="${IMAGE_FULL##*:}"
+
+    //         # Ensure base manifests exist
+    //         test -f k8s/deployment-blue.yaml
+    //         test -f k8s/deployment-green.yaml
+    //         test -f k8s/service.yaml
+
+    //         # Apply service if first time
+    //         if ! kubectl get svc aceest-fitness >/dev/null 2>&1; then
+    //           kubectl apply -f k8s/service.yaml
+    //           echo "Service created."
+    //         fi
+
+    //         # Determine active color (from service selector)
+    //         ACTIVE_COLOR=$(kubectl get svc aceest-fitness -o jsonpath='{.spec.selector.color}')
+    //         if [ -z "$ACTIVE_COLOR" ]; then
+    //           ACTIVE_COLOR=blue
+    //         fi
+    //         if [ "$ACTIVE_COLOR" = "blue" ]; then
+    //           IDLE_COLOR=green
+    //         else
+    //           IDLE_COLOR=blue
+    //         fi
+    //         echo "Active color: $ACTIVE_COLOR  Idle (target) color: $IDLE_COLOR"
+
+    //         # Choose deployment file
+    //         DEPLOY_FILE="k8s/deployment-${IDLE_COLOR}.yaml"
+
+    //         # Inject new image (temporary rendered file)
+    //         RENDERED="$(mktemp)"
+    //         sed "s|\\${IMAGE_TAG}|${COMMIT_TAG}|g" "$DEPLOY_FILE" > "$RENDERED"
+
+    //         echo "Applying $IDLE_COLOR deployment..."
+    //         kubectl apply -f "$RENDERED"
+
+    //         echo "Waiting for pods (${IDLE_COLOR}) to become Ready..."
+    //         kubectl rollout status deployment/aceest-fitness-${IDLE_COLOR} --timeout=180s
+
+    //         # Basic health check (hit root path of one pod)
+    //         POD=$(kubectl get pods -l app=aceest-fitness,color=${IDLE_COLOR} -o jsonpath='{.items[0].metadata.name}')
+    //         echo "Health check on pod $POD"
+    //         # Try via 'kubectl exec' curl; if container lacks curl, fallback to wget
+    //         if ! kubectl exec "$POD" -- sh -c 'command -v curl >/dev/null || command -v wget >/dev/null'; then
+    //           echo "No curl/wget in container; skipping in-pod HTTP check."
+    //         else
+    //           kubectl exec "$POD" -- sh -c ' (command -v curl && curl -fsS http://127.0.0.1:8000/) || (command -v wget && wget -q -O - http://127.0.0.1:8000/) ' >/dev/null
+    //           echo "In-pod HTTP check passed."
+    //         fi
+
+    //         echo "Switching Service selector to $IDLE_COLOR..."
+    //         kubectl set selector service/aceest-fitness app=aceest-fitness,color=${IDLE_COLOR}
+
+    //         echo "Verifying switch..."
+    //         NEW_COLOR=$(kubectl get svc aceest-fitness -o jsonpath='{.spec.selector.color}')
+    //         if [ "$NEW_COLOR" != "$IDLE_COLOR" ]; then
+    //           echo "Service switch failed."
+    //           exit 1
+    //         fi
+
+    //         echo "Blue-Green switch complete. Old color = $ACTIVE_COLOR; new live = $IDLE_COLOR"
+
+    //         echo "Optional: scale down old deployment after grace period."
+    //         kubectl scale deployment/aceest-fitness-${ACTIVE_COLOR} --replicas=0 || true
+
+    //         NODE_IP=$(minikube ip)
+    //         NODE_PORT=$(kubectl get svc aceest-fitness -o jsonpath='{.spec.ports[0].nodePort}')
+    //         echo "App URL: http://${NODE_IP}:${NODE_PORT}"
+    //       '''
+    //     }
+    //   }
+    //   post {
+    //     failure {
+    //       script {
+    //         echo "Blue-Green deployment failed. Attempting rollback..."
+    //         sh '''
+    //           set -e
+    //           if kubectl get svc aceest-fitness >/dev/null 2>&1; then
+    //             PREV_COLOR=$(kubectl get svc aceest-fitness -o jsonpath='{.spec.selector.color}')
+    //             # Determine other color to rollback to
+    //             if [ "$PREV_COLOR" = "blue" ]; then
+    //               TARGET=green
+    //             else
+    //               TARGET=blue
+    //             fi
+    //             if kubectl get deployment aceest-fitness-${TARGET} >/dev/null 2>&1; then
+    //               echo "Rollback: switching service back to ${TARGET}"
+    //               kubectl set selector service/aceest-fitness app=aceest-fitness,color=${TARGET} || true
+    //             fi
+    //           fi
+    //         '''
+    //       }
+    //     }
+    //   }
+    // }
   }
 
   post {
