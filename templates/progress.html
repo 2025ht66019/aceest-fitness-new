@@ -11,7 +11,7 @@
       <li><strong>{{ cat }}:</strong> {{ val }} min</li>
       {% endfor %}
     </ul>
-    <p class="total-minutes">Total Training Time Logged: {{ total_minutes }} minutes</p>
+    <p class="total-minutes">Total Training Time Logged: {{ total_minutes }} minutes{% if total_calories is defined %} / {{ '%.1f'|format(total_calories) }} kcal{% endif %}</p>
   </section>
   <section class="card">
     <h2>Charts</h2>

@@ -3,16 +3,38 @@ import json
 import io
 import base64
 import logging
-from datetime import datetime
+from datetime import datetime, date
 from threading import Lock
-from flask import Flask, render_template, request, redirect, url_for, flash, current_app
+from typing import Optional
+from flask import (
+    Flask,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    flash,
+    current_app,
+    send_file,
+    make_response,
+)
 from flask_wtf import CSRFProtect
 from flask_wtf.csrf import generate_csrf
 from matplotlib.figure import Figure
-from typing import Optional
+from reportlab.pdfgen import canvas as pdf_canvas
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import Table, TableStyle
+from reportlab.lib import colors as rl_colors
 
 DATA_LOCK = Lock()
 DEFAULT_DATA = {"Warm-up": [], "Workout": [], "Cool-down": []}
+DEFAULT_USER_INFO = {}
+
+# MET values (approx.) for calorie estimation per category
+MET_VALUES = {
+    "Warm-up": 3.0,
+    "Workout": 6.0,
+    "Cool-down": 2.5,
+}
 
 # Cache a single SECRET_KEY value so all Gunicorn workers share it.
 _GLOBAL_SECRET: Optional[str] = None
@@ -30,11 +52,25 @@ def load_data():
     try:
         with open(data_file, "r", encoding="utf-8") as f:
             data = json.load(f)
+        # Backward compatibility: ensure required keys
         for k in DEFAULT_DATA.keys():
             data.setdefault(k, [])
         return data
     except (json.JSONDecodeError, OSError):
         return DEFAULT_DATA.copy()
+
+
+def load_user_info() -> dict:
+    """Load persisted user information (if any)."""
+    path = current_app.config['USER_FILE']
+    if not os.path.exists(path):
+        return DEFAULT_USER_INFO.copy()
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            info = json.load(f)
+        return info
+    except (json.JSONDecodeError, OSError):  # pragma: no cover (I/O failure)
+        return DEFAULT_USER_INFO.copy()
 
 
 def save_data(data):
@@ -54,6 +90,25 @@ def save_data(data):
         try:
             if os.path.exists(tmp_file):
                 os.remove(tmp_file)
+        except OSError:
+            pass
+        return False
+
+
+def save_user_info(info: dict) -> bool:
+    """Persist user info to USER_FILE (simple overwrite)."""
+    path = current_app.config['USER_FILE']
+    tmp = path + '.tmp'
+    try:
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(info, f, indent=2)
+        os.replace(tmp, path)
+        return True
+    except OSError as e:  # pragma: no cover
+        current_app.logger.error(f"Failed to write user file '{path}': {e}")
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
         except OSError:
             pass
         return False
@@ -94,11 +149,61 @@ def _register_routes(app: Flask) -> None:
     def index():
         data = load_data()
         categories = list(data.keys())
-        return render_template('index.html', categories=categories)
+        user = load_user_info()
+        return render_template('index.html', categories=categories, user=user)
+
+    @app.route('/user', methods=['GET', 'POST'])
+    def user_info():
+        user = load_user_info()
+        if request.method == 'POST':
+            name = request.form.get('name', '').strip()
+            regn_id = request.form.get('regn_id', '').strip()
+            age_str = request.form.get('age', '').strip()
+            gender = request.form.get('gender', '').strip().upper()
+            height_str = request.form.get('height', '').strip()
+            weight_str = request.form.get('weight', '').strip()
+            try:
+                age = int(age_str)
+                height_cm = float(height_str)
+                weight_kg = float(weight_str)
+                if gender not in {'M','F'}:
+                    raise ValueError('Gender must be M or F')
+                bmi = weight_kg / ((height_cm/100)**2)
+                if gender == 'M':
+                    bmr = 10*weight_kg + 6.25*height_cm - 5*age + 5
+                else:
+                    bmr = 10*weight_kg + 6.25*height_cm - 5*age - 161
+            except Exception as e:
+                flash(f'Invalid input: {e}', 'error')
+                return redirect(url_for('user_info'))
+            user = {
+                'name': name,
+                'regn_id': regn_id,
+                'age': age,
+                'gender': gender,
+                'height': height_cm,
+                'weight': weight_kg,
+                'bmi': bmi,
+                'bmr': bmr,
+                'weekly_cal_goal': 2000,
+            }
+            if save_user_info(user):
+                flash(f'User info saved! BMI={bmi:.1f}, BMR={bmr:.0f} kcal/day', 'success')
+            else:
+                flash('Failed to persist user info.', 'error')
+            return redirect(url_for('user_info'))
+        return render_template('user.html', user=user)
+
+    def _calc_calories(category: str, duration: int, user: dict) -> float:
+        weight = user.get('weight', 70)  # fallback weight if user not set
+        met = MET_VALUES.get(category, 5.0)
+        # Standard calories formula: (MET * 3.5 * weight_kg / 200) * minutes
+        return (met * 3.5 * weight / 200.0) * duration
 
     @app.route('/log', methods=['POST'])
     def log_workout():
         data = load_data()
+        user = load_user_info()
         category = request.form.get('category', 'Workout')
         exercise = request.form.get('exercise', '').strip()
         duration_str = request.form.get('duration', '').strip()
@@ -115,15 +220,18 @@ def _register_routes(app: Flask) -> None:
             flash('Duration must be a positive whole number.', 'error')
             return redirect(url_for('index'))
 
-        entry = {
-            'exercise': exercise,
-            'duration': duration,
-            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        }
-
         if category not in data:
             flash('Invalid category selected.', 'error')
             return redirect(url_for('index'))
+
+        calories = _calc_calories(category, duration, user)
+        entry = {
+            'exercise': exercise,
+            'duration': duration,
+            'calories': calories,
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'date': date.today().isoformat(),
+        }
 
         with DATA_LOCK:
             data[category].append(entry)
@@ -138,7 +246,8 @@ def _register_routes(app: Flask) -> None:
     def summary():
         data = load_data()
         total_time = sum(entry['duration'] for sessions in data.values() for entry in sessions)
-        return render_template('summary.html', data=data, total_time=total_time)
+        total_calories = sum(entry.get('calories', 0) for sessions in data.values() for entry in sessions)
+        return render_template('summary.html', data=data, total_time=total_time, total_calories=total_calories)
 
     @app.route('/plan')
     def plan():
@@ -190,6 +299,7 @@ def _register_routes(app: Flask) -> None:
         data = load_data()
         totals = {cat: sum(e['duration'] for e in sessions) for cat, sessions in data.items()}
         total_minutes = sum(totals.values())
+        total_calories = sum(e.get('calories', 0) for sessions in data.values() for e in sessions)
 
         chart_img = None
         if total_minutes > 0:
@@ -228,7 +338,74 @@ def _register_routes(app: Flask) -> None:
             buf.seek(0)
             chart_img = base64.b64encode(buf.read()).decode('utf-8')
 
-        return render_template('progress.html', totals=totals, total_minutes=total_minutes, chart_img=chart_img)
+        return render_template('progress.html', totals=totals, total_minutes=total_minutes, total_calories=total_calories, chart_img=chart_img)
+
+    @app.route('/export')
+    def export_pdf():
+        """Export a PDF summary of workouts and user info with improved spacing/pagination."""
+        user = load_user_info()
+        data = load_data()
+        filename = 'weekly_report.pdf'
+        tmp_path = os.path.join(current_app.instance_path, filename)
+        os.makedirs(current_app.instance_path, exist_ok=True)
+
+        c = pdf_canvas.Canvas(tmp_path, pagesize=A4)
+        width, height = A4
+        c.setFont('Helvetica-Bold', 16)
+        c.drawString(50, height - 50, f"Weekly Fitness Report - {user.get('name', 'Anonymous')}")
+
+        # User info block (dynamic lines)
+        c.setFont('Helvetica', 11)
+        user_lines = []
+        if user:
+            user_lines.append(f"Regn-ID: {user.get('regn_id','-')}  Age: {user.get('age','-')}  Gender: {user.get('gender','-')}")
+            if 'height' in user and 'weight' in user:
+                user_lines.append(
+                    f"Height: {user.get('height')} cm  Weight: {user.get('weight')} kg  "
+                    f"BMI: {user.get('bmi',0):.1f}  BMR: {user.get('bmr',0):.0f} kcal/day"
+                )
+        base_y = height - 80
+        line_gap = 16
+        for i, line in enumerate(user_lines):
+            c.drawString(50, base_y - i * line_gap, line)
+
+        # Compute start position for table allowing margin below user block
+        y = base_y - (len(user_lines) * line_gap) - 40
+        table_data = [["Category", "Exercise", "Duration", "Calories", "Date"]]
+        for cat, sessions in data.items():
+            for e in sessions:
+                table_data.append([
+                    cat,
+                    e.get('exercise',''),
+                    f"{e.get('duration',0)} min",
+                    f"{e.get('calories',0):.1f}",
+                    e.get('timestamp','').split(' ')[0],
+                ])
+        table = Table(table_data, colWidths=[80, 180, 90, 90, 90])
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), rl_colors.lightblue),
+            ("GRID", (0,0), (-1,-1), 0.5, rl_colors.black),
+            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ]))
+
+        est_row_height = 18
+        est_table_height = est_row_height * len(table_data)
+        bottom_margin = 60
+        available_height = y - bottom_margin
+        if est_table_height > available_height:
+            # New page for table if not enough space
+            c.showPage()
+            c.setFont('Helvetica-Bold', 14)
+            c.drawString(50, height - 50, 'Workout Session Details (Continued)')
+            c.setFont('Helvetica', 11)
+            y = height - 90
+
+        table.wrapOn(c, width - 100, y)
+        # Draw table aligning bottom of header near y
+        draw_y = y - est_table_height
+        table.drawOn(c, 50, draw_y)
+        c.save()
+        return send_file(tmp_path, as_attachment=True, download_name=filename)
 
 
 def create_app(test_config: Optional[dict] = None) -> Flask:
@@ -249,6 +426,10 @@ def create_app(test_config: Optional[dict] = None) -> Flask:
     default_data_path = os.path.join(os.path.dirname(__file__), 'data.json')
     env_data_path = os.getenv('DATA_FILE')
     app.config.setdefault('DATA_FILE', env_data_path if env_data_path else default_data_path)
+    # User info file (separate from workout log for clarity)
+    default_user_path = os.path.join(os.path.dirname(__file__), 'user.json')
+    env_user_path = os.getenv('USER_FILE')
+    app.config.setdefault('USER_FILE', env_user_path if env_user_path else default_user_path)
     # If directory is not writable, attempt permissive warning so user sees flash message instead of silent failure.
     data_dir = os.path.dirname(app.config['DATA_FILE']) or '.'
     if not os.access(data_dir, os.W_OK):  # pragma: no cover (environment dependent)
