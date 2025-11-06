@@ -499,6 +499,25 @@ def secure_headers(resp):  # pragma: no cover (header setting)
 
 @app.errorhandler(CSRFError)
 def handle_csrf_error(e):  # pragma: no cover (error path)
-    current_app.logger.warning(f'CSRF failure: {e.description}')
-    flash('Security validation failed. Please reload the page.', 'error')
-    return redirect(url_for('index')), 400
+    # Provide richer diagnostics in logs (never echo sensitive values to user)
+    try:
+        form_keys = list(request.form.keys())
+        has_token_field = 'csrf_token' in request.form
+        token_len = len(request.form.get('csrf_token', '')) if has_token_field else 0
+        current_app.logger.warning(
+            'CSRF failure: %s | token_field=%s token_len=%s form_keys=%s path=%s method=%s',
+            e.description,
+            has_token_field,
+            token_len,
+            form_keys,
+            request.path,
+            request.method,
+        )
+    except Exception:  # pragma: no cover - defensive logging
+        current_app.logger.warning('CSRF failure (diagnostic logging failed): %s', e.description)
+
+    # User-facing message kept generic to avoid leaking mechanics
+    flash('Your session security token was missing or expired. Please reload the page and try again.', 'error')
+    # Redirect to referrer if safe, else index, preserving UX flow
+    ref = request.headers.get('Referer')
+    return redirect(ref or url_for('index')), 400
