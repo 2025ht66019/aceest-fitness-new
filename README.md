@@ -13,7 +13,7 @@ A modern, responsive web application for tracking fitness workouts, converted fr
 - **Data Management**: Clear all workouts functionality
 - **Container Ready**: Dockerized for easy deployment
 
-## Technologies Used
+### Technologies Used
 
 - **Backend**: Flask (Python web framework)
 - **Frontend**: HTML5, CSS3, Bootstrap 5, Font Awesome
