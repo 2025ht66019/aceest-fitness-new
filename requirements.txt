@@ -1,15 +1,8 @@
 Flask==2.3.3
-# Flask-Cors pinned to latest published (5.0.0). 6.0.0 does not exist and caused pipeline failure.
-Flask-Cors==5.0.0
+Flask-Cors==4.0.0
 reportlab==4.0.4
-# Matplotlib 3.9.x requires Python >=3.9; provide fallback for Jenkins Python 3.8
-matplotlib==3.7.5 ; python_version < '3.9'
-matplotlib==3.9.4 ; python_version >= '3.9'
-# Upgrade to >=23.0.0 to fix CVE-2024-1135 & CVE-2024-6827
-gunicorn==23.0.0
+matplotlib==3.9.4
+gunicorn==21.2.0
 pytest==7.4.2
 pytest-cov==4.1.0
-# Upgrade to >=2.32.4 for CVE-2024-35195 & CVE-2024-47081
-requests==2.32.4
-# CSRF protection (Flask-WTF) for secure forms; pinned for reproducibility
-Flask-WTF==1.2.1
+requests==2.31.0
