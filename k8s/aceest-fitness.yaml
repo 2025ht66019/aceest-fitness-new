@@ -30,20 +30,14 @@ spec:
             httpGet:
               path: /
               port: 5000
-            initialDelaySeconds: 10
-            periodSeconds: 15
+            initialDelaySeconds: 5
+            periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /
               port: 5000
-            initialDelaySeconds: 30
+            initialDelaySeconds: 15
             periodSeconds: 20
-          startupProbe:
-            httpGet:
-              path: /
-              port: 5000
-            failureThreshold: 10
-            periodSeconds: 5
           resources:
             requests:
               cpu: 50m
@@ -53,12 +47,6 @@ spec:
               cpu: 250m
               memory: 256Mi
               ephemeral-storage: 256Mi
-          env:
-            - name: FLASK_SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: aceest-fitness-secret
-                  key: FLASK_SECRET_KEY
 ---
 apiVersion: v1
 kind: Service
