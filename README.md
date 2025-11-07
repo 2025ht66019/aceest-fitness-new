@@ -56,5 +56,5 @@ FLASK_DEBUG=false
 - Add export (CSV/JSON) for workout history
 - Add weekly aggregation and trend lines
 
-## License
+### License
 Internal / Unspecified. Add a proper license file if distributing.
