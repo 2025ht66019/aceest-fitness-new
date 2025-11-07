@@ -270,6 +270,20 @@ For support and questions:
 - Check the troubleshooting section
 - Review the API documentation above
 
+## Security
+
+### CSRF Protection
+
+All form POST requests are protected with Flask-WTF CSRF middleware. A hidden `csrf_token` field is injected into forms and validated server-side. Do NOT disable CSRF (e.g. by setting `WTF_CSRF_ENABLED = False`); this is required for protection against cross-site request forgery.
+
+To add a new POST form, include:
+
+```html
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+```
+
+Ensure `SECRET_KEY` is set in production via environment variable. The development fallback is random per process.
+
 ## CI/CD (Jenkins + SonarQube + Minikube)
 
 This repository includes a `Jenkinsfile` that automates the full pipeline:

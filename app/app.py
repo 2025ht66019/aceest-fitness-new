@@ -1,8 +1,23 @@
-from flask import Flask, render_template_string, request, redirect, url_for
+from flask import Flask, render_template_string, request, redirect, url_for, jsonify
+import os, secrets
+from flask_wtf import CSRFProtect
+from flask_wtf.csrf import generate_csrf
 from datetime import datetime
 from jinja2 import DictLoader
 
 app = Flask(__name__)
+# Secure secret key (read from env in production). A random fallback is generated for dev/local usage.
+_secret = os.environ.get('SECRET_KEY') or os.environ.get('FLASK_SECRET_KEY')
+if os.environ.get('FLASK_ENFORCE_SECRET') == '1' and not _secret:
+  raise RuntimeError('SECRET_KEY/FLASK_SECRET_KEY must be set when FLASK_ENFORCE_SECRET=1')
+app.config['SECRET_KEY'] = _secret or secrets.token_hex(16)
+
+# Initialize global CSRF protection (do NOT disable)
+csrf = CSRFProtect(app)
+
+@app.context_processor
+def inject_csrf_token():  # makes {{ csrf_token() }} available in templates
+  return dict(csrf_token=generate_csrf)
 
 # Register in-memory templates for inheritance
 BASE_HTML = """
@@ -68,6 +83,7 @@ INDEX_HTML = """
   <div class="status {% if 'Error:' in status %}error{% endif %}">{{ status }}</div>
 {% endif %}
 <form method="post" action="{{ url_for('add_session') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
   <label for="category">Category</label>
   <select name="category" id="category">
     {% for c in workouts.keys() %}
@@ -188,6 +204,15 @@ def workout_chart():
 @app.route("/diet")
 def diet_chart():
     return _render(DIET_CHART_HTML, diets=DIET_PLANS, active="diet")
+
+@app.route('/healthz')
+def healthz():
+  # Lightweight probe response; avoid heavy computations
+  return jsonify({
+    'status': 'ok',
+    'csrf_enabled': True,
+    'workout_categories': list(workouts.keys())
+  }), 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
