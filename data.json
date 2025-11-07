@@ -1,0 +1,88 @@
+{
+  "Warm-up": [
+    {
+      "exercise": "pushups",
+      "duration": 4,
+      "timestamp": "2025-11-05 01:36:59"
+    },
+    {
+      "exercise": "Jog",
+      "duration": 5,
+      "timestamp": "2025-11-05 01:46:25"
+    },
+    {
+      "exercise": "Jog",
+      "duration": 5,
+      "timestamp": "2025-11-05 01:46:42"
+    },
+    {
+      "exercise": "Jog",
+      "duration": 5,
+      "timestamp": "2025-11-05 01:46:57"
+    },
+    {
+      "exercise": "Jog",
+      "duration": 5,
+      "timestamp": "2025-11-05 01:47:06"
+    },
+    {
+      "exercise": "Jog",
+      "duration": 5,
+      "timestamp": "2025-11-05 01:47:16"
+    }
+  ],
+  "Workout": [
+    {
+      "exercise": "Push-ups",
+      "duration": 10,
+      "timestamp": "2025-11-05 01:46:25"
+    },
+    {
+      "exercise": "Push-ups",
+      "duration": 10,
+      "timestamp": "2025-11-05 01:46:42"
+    },
+    {
+      "exercise": "Push-ups",
+      "duration": 10,
+      "timestamp": "2025-11-05 01:46:57"
+    },
+    {
+      "exercise": "Push-ups",
+      "duration": 10,
+      "timestamp": "2025-11-05 01:47:06"
+    },
+    {
+      "exercise": "Push-ups",
+      "duration": 10,
+      "timestamp": "2025-11-05 01:47:16"
+    }
+  ],
+  "Cool-down": [
+    {
+      "exercise": "Stretch",
+      "duration": 3,
+      "timestamp": "2025-11-05 01:46:25"
+    },
+    {
+      "exercise": "Stretch",
+      "duration": 3,
+      "timestamp": "2025-11-05 01:46:42"
+    },
+    {
+      "exercise": "Stretch",
+      "duration": 3,
+      "timestamp": "2025-11-05 01:46:57"
+    },
+    {
+      "exercise": "Stretch",
+      "duration": 3,
+      "timestamp": "2025-11-05 01:47:06"
+    },
+    {
+      "exercise": "Stretch",
+      "duration": 3,
+      "timestamp": "2025-11-05 01:47:16"
+    }
+  ]
+}
