@@ -7,29 +7,9 @@ pipeline {
   }
 
   stages {
-    stage('Net Diagnostics') {
-      steps {
-        sh '''
-          set -e
-          echo '--- Network / DNS diagnostics ---'
-          echo '[resolv.conf]'; cat /etc/resolv.conf || true
-          echo '[nslookup github.com]'; (nslookup github.com || dig +short github.com || getent hosts github.com || true)
-          echo '[curl github.com head]'; (curl -Is https://github.com | head -n1 || true)
-        '''
-      }
-    }
     stage('Checkout') {
       steps {
-        script {
-          retry(3) {
-            checkout([
-              $class: 'GitSCM',
-              branches: [[name: '*/dev']],
-              userRemoteConfigs: [[url: 'https://github.com/2025ht66019/aceest-fitness-new.git']],
-              extensions: [[$class: 'CloneOption', depth: 1, shallow: true, timeout: 10]]
-            ])
-          }
-        }
+        checkout scm
       }
     }
 
@@ -141,62 +121,6 @@ pipeline {
         }
       }
     }
-    stage('Ensure Secret') {
-      steps {
-        script {
-          // Attempt to load credential if it exists; fall back to generated secret if not.
-          def haveCred = false
-          try {
-            withCredentials([string(credentialsId: 'flask-secret-key', variable: 'FLASK_SECRET_KEY')]) {
-              haveCred = (env.FLASK_SECRET_KEY?.trim())
-            }
-          } catch (ignored) {
-            echo "Credential 'flask-secret-key' not found; will generate one-time secret (consider adding a managed credential)."
-          }
-          sh '''
-            set -e
-            if [ -z "$FLASK_SECRET_KEY" ]; then
-              echo "Generating ephemeral FLASK_SECRET_KEY (not ideal for session persistence)."
-              if command -v python3 >/dev/null 2>&1; then
-                FLASK_SECRET_KEY=$(python3 - <<'PY'
-import secrets; print(secrets.token_hex(48))
-PY
-)
-              elif command -v openssl >/dev/null 2>&1; then
-                FLASK_SECRET_KEY=$(openssl rand -hex 48)
-              else
-                echo "ERROR: Neither python3 nor openssl available to generate secret" >&2
-                exit 1
-              fi
-              export FLASK_SECRET_KEY
-            fi
-            if [ -z "$FLASK_SECRET_KEY" ]; then
-              echo "ERROR: FLASK_SECRET_KEY empty after generation attempt" >&2
-              exit 1
-            fi
-            # Detect existing secret with empty/missing FLASK_SECRET_KEY value and regenerate.
-            existing_base64=$(kubectl get secret aceest-fitness-secret -o jsonpath='{.data.FLASK_SECRET_KEY}' 2>/dev/null || true)
-            if [ -z "$existing_base64" ]; then
-              echo "Existing secret missing or empty FLASK_SECRET_KEY data; deleting for recreation." >&2
-              kubectl delete secret aceest-fitness-secret >/dev/null 2>&1 || true
-            else
-              decoded=$(echo "$existing_base64" | base64 --decode 2>/dev/null || true)
-              if [ -z "$decoded" ]; then
-                echo "Existing secret FLASK_SECRET_KEY decodes to empty; deleting for recreation." >&2
-                kubectl delete secret aceest-fitness-secret >/dev/null 2>&1 || true
-              fi
-            fi
-            if ! kubectl get secret aceest-fitness-secret >/dev/null 2>&1; then
-              kubectl create secret generic aceest-fitness-secret \
-                --from-literal=FLASK_SECRET_KEY="$FLASK_SECRET_KEY"
-              echo "Created aceest-fitness-secret (source: ${FLASK_SECRET_KEY_SOURCE:-auto})."
-            else
-              echo "Secret aceest-fitness-secret already exists; leaving unchanged."
-            fi
-          '''
-        }
-      }
-    }
     stage('Deploy to Minikube') {
       when {
         expression { return env.DOCKER_IMAGE_LATEST }
@@ -218,13 +142,13 @@ PY
             echo "Deploying image tag: $COMMIT_TAG"
 
             # Verify placeholder exists
-            if ! grep -q '\\${IMAGE_TAG}' k8s/rolling-update.yaml; then
-              echo "Placeholder \\${IMAGE_TAG} not found in k8s/rolling-update.yaml"
+            if ! grep -q '\\${IMAGE_TAG}' k8s/canary-deployment.yaml; then
+              echo "Placeholder \\${IMAGE_TAG} not found in k8s/canary-deployment.yaml"
               exit 1
             fi
 
             # Substitute placeholder and apply
-            sed -e "s|\\${IMAGE_TAG}|${COMMIT_TAG}|g" k8s/rolling-update.yaml | kubectl apply -f -
+            sed -e "s|\\${IMAGE_TAG}|${COMMIT_TAG}|g" k8s/canary-deployment.yaml | kubectl apply -f -
 
             echo "Waiting for rollout..."
             kubectl rollout status deployment/aceest-fitness --timeout=180s
@@ -241,124 +165,13 @@ PY
          } catch (err) {
           echo "Deployment failed! Rolling back..."
           sh '''
-            kubectl rollout undo deployment/aceest-fitness
+            kubectl rollout undo deployment/aceest-fitness-canary
           '''
           error "Rollback executed due to deployment failure."
         }
        } 
       }
     }
-    // stage('Blue-Green Deploy') {
-    //   when {
-    //     expression { return env.DOCKER_IMAGE_COMMIT }
-    //   }
-    //   steps {
-    //     script {
-    //       sh '''
-    //         set -e
-
-    //         echo "Checking kubectl / minikube..."
-    //         command -v kubectl >/dev/null
-    //         command -v minikube >/dev/null
-    //         if ! minikube status >/dev/null 2>&1; then
-    //           minikube start --memory=2048 --cpus=2
-    //         fi
-
-    //         IMAGE_FULL="${DOCKER_IMAGE_COMMIT}"
-    //         COMMIT_TAG="${IMAGE_FULL##*:}"
-
-    //         # Ensure base manifests exist
-    //         test -f k8s/deployment-blue.yaml
-    //         test -f k8s/deployment-green.yaml
-    //         test -f k8s/service.yaml
-
-    //         # Apply service if first time
-    //         if ! kubectl get svc aceest-fitness >/dev/null 2>&1; then
-    //           kubectl apply -f k8s/service.yaml
-    //           echo "Service created."
-    //         fi
-
-    //         # Determine active color (from service selector)
-    //         ACTIVE_COLOR=$(kubectl get svc aceest-fitness -o jsonpath='{.spec.selector.color}')
-    //         if [ -z "$ACTIVE_COLOR" ]; then
-    //           ACTIVE_COLOR=blue
-    //         fi
-    //         if [ "$ACTIVE_COLOR" = "blue" ]; then
-    //           IDLE_COLOR=green
-    //         else
-    //           IDLE_COLOR=blue
-    //         fi
-    //         echo "Active color: $ACTIVE_COLOR  Idle (target) color: $IDLE_COLOR"
-
-    //         # Choose deployment file
-    //         DEPLOY_FILE="k8s/deployment-${IDLE_COLOR}.yaml"
-
-    //         # Inject new image (temporary rendered file)
-    //         RENDERED="$(mktemp)"
-    //         sed "s|\\${IMAGE_TAG}|${COMMIT_TAG}|g" "$DEPLOY_FILE" > "$RENDERED"
-
-    //         echo "Applying $IDLE_COLOR deployment..."
-    //         kubectl apply -f "$RENDERED"
-
-    //         echo "Waiting for pods (${IDLE_COLOR}) to become Ready..."
-    //         kubectl rollout status deployment/aceest-fitness-${IDLE_COLOR} --timeout=180s
-
-    //         # Basic health check (hit root path of one pod)
-    //         POD=$(kubectl get pods -l app=aceest-fitness,color=${IDLE_COLOR} -o jsonpath='{.items[0].metadata.name}')
-    //         echo "Health check on pod $POD"
-    //         # Try via 'kubectl exec' curl; if container lacks curl, fallback to wget
-    //         if ! kubectl exec "$POD" -- sh -c 'command -v curl >/dev/null || command -v wget >/dev/null'; then
-    //           echo "No curl/wget in container; skipping in-pod HTTP check."
-    //         else
-    //           kubectl exec "$POD" -- sh -c ' (command -v curl && curl -fsS http://127.0.0.1:8000/) || (command -v wget && wget -q -O - http://127.0.0.1:8000/) ' >/dev/null
-    //           echo "In-pod HTTP check passed."
-    //         fi
-
-    //         echo "Switching Service selector to $IDLE_COLOR..."
-    //         kubectl set selector service/aceest-fitness app=aceest-fitness,color=${IDLE_COLOR}
-
-    //         echo "Verifying switch..."
-    //         NEW_COLOR=$(kubectl get svc aceest-fitness -o jsonpath='{.spec.selector.color}')
-    //         if [ "$NEW_COLOR" != "$IDLE_COLOR" ]; then
-    //           echo "Service switch failed."
-    //           exit 1
-    //         fi
-
-    //         echo "Blue-Green switch complete. Old color = $ACTIVE_COLOR; new live = $IDLE_COLOR"
-
-    //         echo "Optional: scale down old deployment after grace period."
-    //         kubectl scale deployment/aceest-fitness-${ACTIVE_COLOR} --replicas=0 || true
-
-    //         NODE_IP=$(minikube ip)
-    //         NODE_PORT=$(kubectl get svc aceest-fitness -o jsonpath='{.spec.ports[0].nodePort}')
-    //         echo "App URL: http://${NODE_IP}:${NODE_PORT}"
-    //       '''
-    //     }
-    //   }
-    //   post {
-    //     failure {
-    //       script {
-    //         echo "Blue-Green deployment failed. Attempting rollback..."
-    //         sh '''
-    //           set -e
-    //           if kubectl get svc aceest-fitness >/dev/null 2>&1; then
-    //             PREV_COLOR=$(kubectl get svc aceest-fitness -o jsonpath='{.spec.selector.color}')
-    //             # Determine other color to rollback to
-    //             if [ "$PREV_COLOR" = "blue" ]; then
-    //               TARGET=green
-    //             else
-    //               TARGET=blue
-    //             fi
-    //             if kubectl get deployment aceest-fitness-${TARGET} >/dev/null 2>&1; then
-    //               echo "Rollback: switching service back to ${TARGET}"
-    //               kubectl set selector service/aceest-fitness app=aceest-fitness,color=${TARGET} || true
-    //             fi
-    //           fi
-    //         '''
-    //       }
-    //     }
-    //   }
-    // }
   }
 
   post {
