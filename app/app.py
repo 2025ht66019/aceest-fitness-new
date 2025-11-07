@@ -1,8 +1,22 @@
 from flask import Flask, render_template_string, request, redirect, url_for
 from datetime import datetime
 from jinja2 import DictLoader
+from flask_wtf import CSRFProtect
+from flask_wtf.csrf import generate_csrf
+import os
 
 app = Flask(__name__)
+
+# --- Security / CSRF configuration ---
+# Use env-provided secret if available; otherwise warn and generate ephemeral (dev only).
+secret = os.getenv('FLASK_SECRET_KEY') or os.getenv('SECRET_KEY')
+if not secret:
+  import secrets, logging
+  logging.getLogger(__name__).warning('No FLASK_SECRET_KEY set for mini app; generating ephemeral key (not for production).')
+  secret = secrets.token_hex(32)
+app.config['SECRET_KEY'] = secret
+app.config.setdefault('SESSION_COOKIE_SAMESITE', 'Lax')  # helps mitigate CSRF from third-party contexts
+CSRFProtect(app)  # Enable CSRF protection for POST routes
 
 # Register in-memory templates for inheritance
 BASE_HTML = """
@@ -68,6 +82,7 @@ INDEX_HTML = """
   <div class="status {% if 'Error:' in status %}error{% endif %}">{{ status }}</div>
 {% endif %}
 <form method="post" action="{{ url_for('add_session') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
   <label for="category">Category</label>
   <select name="category" id="category">
     {% for c in workouts.keys() %}
@@ -155,7 +170,12 @@ DIET_CHART_HTML = """
 """
 
 def _render(tpl, **ctx):
-    return render_template_string(tpl, workouts=workouts, **ctx)
+  return render_template_string(tpl, workouts=workouts, **ctx)
+
+# Jinja helper for inline templates (so {{ csrf_token() }} works)
+@app.context_processor
+def inject_csrf():  # pragma: no cover (simple context injection)
+  return {'csrf_token': generate_csrf}
 
 @app.route("/", methods=["GET"])
 def index():
