@@ -6,14 +6,25 @@ from flask_wtf.csrf import CSRFProtect, generate_csrf
 
 app = Flask(__name__)
 
-# --- Security / CSRF configuration ---
-# Prefer externally supplied secret; otherwise generate ephemeral (dev/test only).
-secret = os.getenv('FLASK_SECRET_KEY') or os.getenv('SECRET_KEY')
-if not secret:
-  import secrets, logging
-  logging.getLogger(__name__).warning('No FLASK_SECRET_KEY set for mini app; generating ephemeral key (NOT for production).')
-  secret = secrets.token_hex(32)
-app.config['SECRET_KEY'] = secret
+"""Lightweight fitness mini-app (in-memory) used alongside the main app.
+
+Security notes:
+ - SECRET_KEY is never hard-coded; we derive it from environment or generate an ephemeral
+   development/testing value. Sonar may flag the assignment below; this is a false positive.
+ - For production set FLASK_SECRET_KEY (preferred) via a secret manager or Kubernetes Secret.
+ - Generated ephemeral key is safe only for local/dev single-process usage.
+"""
+
+# --- Secure secret provisioning (no hard-coded literal) ---
+def _derive_secret():
+    env_secret = os.getenv('FLASK_SECRET_KEY') or os.getenv('SECRET_KEY')
+    if env_secret:
+        return env_secret
+    import secrets, logging
+    logging.getLogger(__name__).warning('No FLASK_SECRET_KEY set; using ephemeral dev key (NOT for production).')
+    return secrets.token_hex(32)
+
+app.config['SECRET_KEY'] = _derive_secret()  # NOSONAR: value is dynamic, not a hard-coded credential.
 app.config.setdefault('SESSION_COOKIE_SAMESITE', 'Lax')
 
 # Initialize CSRF extension; we flip enablement per request to ensure pytest imports before env vars set still honor test disabling.
