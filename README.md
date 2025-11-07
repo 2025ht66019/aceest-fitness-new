@@ -317,7 +317,7 @@ kubectl rollout status deployment/aceest-fitness
 minikube service aceest-fitness --url
 ```
 
-#### Adjustments
+### Adjustments
 
 - Change `nodePort` in `k8s/service.yaml` if 30080 conflicts.
 - Add resource requests/limits for production.
