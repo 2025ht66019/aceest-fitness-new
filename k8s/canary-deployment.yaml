@@ -32,21 +32,12 @@ spec:
           image: 2025ht66019/aceest_fitness:v1
           ports:
             - containerPort: 5000
-          env:
-            - name: FLASK_SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: aceest-fitness-secret
-                  key: FLASK_SECRET_KEY
-            - name: FLASK_ENFORCE_SECRET
-              value: "1"
-          # Prefer dedicated health endpoint for probes
           readinessProbe:
-            httpGet: { path: /healthz, port: 5000 }
+            httpGet: { path: /, port: 5000 }
             initialDelaySeconds: 3
             periodSeconds: 5
           livenessProbe:
-            httpGet: { path: /healthz, port: 5000 }
+            httpGet: { path: /, port: 5000 }
             initialDelaySeconds: 10
             periodSeconds: 10
           resources:
@@ -87,21 +78,12 @@ spec:
           image: 2025ht66019/aceest_fitness:${IMAGE_TAG}
           ports:
             - containerPort: 5000
-          env:
-            - name: FLASK_SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: aceest-fitness-secret
-                  key: FLASK_SECRET_KEY
-            - name: FLASK_ENFORCE_SECRET
-              value: "1"
-          # Use consistent health endpoint for probes
           readinessProbe:
-            httpGet: { path: /healthz, port: 5000 }
+            httpGet: { path: /, port: 5000 }
             initialDelaySeconds: 3
             periodSeconds: 5
           livenessProbe:
-            httpGet: { path: /healthz, port: 5000 }
+            httpGet: { path: /, port: 5000 }
             initialDelaySeconds: 10
             periodSeconds: 10
           resources:
