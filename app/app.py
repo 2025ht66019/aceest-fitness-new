@@ -14,18 +14,19 @@ if not _secret:
     raise RuntimeError('SECRET_KEY/FLASK_SECRET_KEY must be set when FLASK_ENFORCE_SECRET=1')
   # Allow deterministic key for local dev & tests only (explicitly marked as non-production).
   if app.config.get('TESTING') or os.environ.get('FLASK_ENV') == 'development':
-    _secret = 'local-dev-test-secret'  # Non-production fallback. NOSONAR
+    _secret = 'local-dev-test-secret'  # NOSONAR
   else:
     # Generate ephemeral runtime secret (will invalidate sessions on restart, acceptable for ad-hoc runs)
     _secret = secrets.token_hex(32)  # NOSONAR
-app.config['SECRET_KEY'] = _secret  # Assigned from env or controlled fallback; not a hard-coded production credential. NOSONAR
+app.config['SECRET_KEY'] = _secret  #  NOSONAR
 
 # Initialize global CSRF protection (do NOT disable)
 csrf = CSRFProtect(app)
 
 @app.context_processor
 def inject_csrf_token():  # makes {{ csrf_token() }} available in templates
-  return dict(csrf_token=generate_csrf)
+  # Return dict literal to satisfy quality check (avoid dict() constructor)
+  return {'csrf_token': generate_csrf}
 
 # Register in-memory templates for inheritance
 BASE_HTML = """
