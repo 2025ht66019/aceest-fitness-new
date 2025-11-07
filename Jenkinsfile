@@ -13,21 +13,6 @@ pipeline {
       }
     }
 
-    stage('Diagnostics') {
-      steps {
-        script {
-          echo 'Collecting basic network and environment diagnostics...'
-          sh '''
-            set -e
-            echo "Python version:"; python3 --version || true
-            echo "DNS Resolution for github.com:"; getent hosts github.com || nslookup github.com || true
-            echo "Active git remote:"; git remote -v || true
-            echo "Current branch:"; git rev-parse --abbrev-ref HEAD || true
-          '''
-        }
-      }
-    }
-
     stage('Set up Python') {
       steps {
         sh 'python3 --version'
@@ -44,8 +29,7 @@ pipeline {
 
     stage('Pytest with Coverage') {
       steps {
-        // Disable CSRF for test context explicitly to avoid token requirements; enable coverage.
-        sh 'export PYTHONPATH=$PWD && export DISABLE_CSRF_FOR_TESTS=1 && . venv/bin/activate && pytest -v --cov=. --cov-report xml --junitxml=pytest-results.xml'
+        sh 'export PYTHONPATH=$PWD && . venv/bin/activate && pytest -v --cov=. --cov-report xml --junitxml=pytest-results.xml'
       }
       post {
         always {
@@ -134,40 +118,6 @@ pipeline {
             sh "docker push ${env.DOCKER_IMAGE_COMMIT}"
             sh "docker push ${env.DOCKER_IMAGE_LATEST}"
           }
-        }
-      }
-    }
-
-    stage('Ensure Secret') {
-      when { expression { return env.DOCKER_IMAGE_LATEST } }
-      steps {
-        script {
-          sh '''
-            set -e
-            echo "Ensuring Kubernetes secret 'aceest-fitness-secret' exists and non-empty..."
-            command -v kubectl >/dev/null || { echo "kubectl not found"; exit 1; }
-            if ! kubectl get secret aceest-fitness-secret >/dev/null 2>&1; then
-              echo "Secret missing; creating new one."
-              kubectl create secret generic aceest-fitness-secret \
-                --from-literal=FLASK_SECRET_KEY=$(python3 - <<'PY'
-import secrets;print(secrets.token_hex(32))
-PY
-)
-            else
-              VAL=$(kubectl get secret aceest-fitness-secret -o jsonpath='{.data.FLASK_SECRET_KEY}' | base64 --decode || true)
-              if [ -z "$VAL" ]; then
-                echo "Secret present but empty; recreating."
-                kubectl delete secret aceest-fitness-secret
-                kubectl create secret generic aceest-fitness-secret \
-                  --from-literal=FLASK_SECRET_KEY=$(python3 - <<'PY'
-import secrets;print(secrets.token_hex(32))
-PY
-)
-              else
-                echo "Secret already populated (length: ${#VAL})."
-              fi
-            fi
-          '''
         }
       }
     }
