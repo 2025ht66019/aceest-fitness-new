@@ -22,7 +22,7 @@ A modern, responsive web application for tracking fitness workouts, converted fr
 - **Testing**: Pytest
 - **Production Server**: Gunicorn WSGI server
 
-## Quick Start
+### Quick Start
 
 ### Option 1: Using Docker (Recommended)
 
