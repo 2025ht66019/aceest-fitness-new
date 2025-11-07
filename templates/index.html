@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>🏋️ Log Workouts</h1>
+<form method="post" action="{{ url_for('log_workout') }}" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+  <div class="form-group">
+    <label for="category">Category</label>
+    <select name="category" id="category">
+      {% for c in categories %}
+      <option value="{{ c }}">{{ c }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group">
+    <label for="exercise">Exercise</label>
+    <input type="text" id="exercise" name="exercise" placeholder="e.g. Push-ups" required />
+  </div>
+  <div class="form-group">
+    <label for="duration">Duration (minutes)</label>
+    <input type="number" id="duration" name="duration" min="1" step="1" required />
+  </div>
+  <button type="submit" class="btn-primary">Add Session ✅</button>
+</form>
+<div class="hint">Log your session to see it reflected in Summary and Progress pages.</div>
+{% endblock %}

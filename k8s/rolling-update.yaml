@@ -30,28 +30,47 @@ spec:
         runAsGroup: 1000
         fsGroup: 1000
       containers:
-        - name: web
+        - name: aceest-fitness
           image: 2025ht66019/aceest_fitness:${IMAGE_TAG}
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - containerPort: 5000
           env:
             - name: FLASK_ENV
               value: production
+            - name: FLASK_DEBUG
+              value: "false"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: FLASK_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aceest-fitness-secret
+                  key: FLASK_SECRET_KEY
+            # Enforce presence of a provided secret key in production. If the
+            # secret is missing (e.g., typo in secret name / key), the app will
+            # raise at startup instead of silently generating an ephemeral key,
+            # which previously caused cross-pod CSRF/session mismatches.
+            - name: FLASK_ENFORCE_SECRET
+              value: "1"
           readinessProbe:
             httpGet:
-              path: /
-              port: 5000
-            initialDelaySeconds: 3
-            periodSeconds: 5
-            failureThreshold: 3
-          livenessProbe:
-            httpGet:
-              path: /
+              path: /healthz
               port: 5000
             initialDelaySeconds: 10
-            periodSeconds: 10
-            failureThreshold: 3
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 5000
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 5000
+            failureThreshold: 10
+            periodSeconds: 5
           resources:
             requests:
               cpu: 50m

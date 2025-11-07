@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>📝 User Information</h1>
+<form method="post" action="{{ url_for('user_save') }}" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+  <div class="form-group">
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" value="{{ user.name if user else '' }}" required />
+  </div>
+  <div class="form-group">
+    <label for="regn_id">Regn-ID</label>
+    <input type="text" id="regn_id" name="regn_id" value="{{ user.regn_id if user else '' }}" />
+  </div>
+  <div class="form-group">
+    <label for="age">Age</label>
+    <input type="number" id="age" name="age" min="1" value="{{ user.age if user else '' }}" required />
+  </div>
+  <div class="form-group">
+    <label for="gender">Gender (M/F)</label>
+    <input type="text" id="gender" name="gender" maxlength="1" value="{{ user.gender if user else '' }}" required />
+  </div>
+  <div class="form-group">
+    <label for="height">Height (cm)</label>
+    <input type="number" id="height" name="height" step="0.1" value="{{ user.height if user else '' }}" required />
+  </div>
+  <div class="form-group">
+    <label for="weight">Weight (kg)</label>
+    <input type="number" id="weight" name="weight" step="0.1" value="{{ user.weight if user else '' }}" required />
+  </div>
+  <button type="submit" class="btn-primary">Save Info ✅</button>
+</form>
+{% if user and user.bmi %}
+<section class="card">
+  <h2>Calculated Metrics</h2>
+  <p><strong>BMI:</strong> {{ '%.1f'|format(user.bmi) }}</p>
+  <p><strong>BMR:</strong> {{ '%.0f'|format(user.bmr) }} kcal/day</p>
+  <p><strong>Weekly Calorie Goal:</strong> {{ user.weekly_cal_goal }} kcal</p>
+  <a class="btn-secondary" href="{{ url_for('export_pdf') }}">📄 Export Weekly PDF Report</a>
+</section>
+{% endif %}
+{% endblock %}
