@@ -13,7 +13,7 @@ A modern, responsive web application for tracking fitness workouts, converted fr
 - **Data Management**: Clear all workouts functionality
 - **Container Ready**: Dockerized for easy deployment
 
-## Technologies Used
+### Technologies Used
 
 - **Backend**: Flask (Python web framework)
 - **Frontend**: HTML5, CSS3, Bootstrap 5, Font Awesome
@@ -22,7 +22,7 @@ A modern, responsive web application for tracking fitness workouts, converted fr
 - **Testing**: Pytest
 - **Production Server**: Gunicorn WSGI server
 
-## Quick Start
+### Quick Start
 
 ### Option 1: Using Docker (Recommended)
 
@@ -270,6 +270,20 @@ For support and questions:
 - Check the troubleshooting section
 - Review the API documentation above
 
+## Security
+
+### CSRF Protection
+
+All form POST requests are protected with Flask-WTF CSRF middleware. A hidden `csrf_token` field is injected into forms and validated server-side. Do NOT disable CSRF (e.g. by setting `WTF_CSRF_ENABLED = False`); this is required for protection against cross-site request forgery.
+
+To add a new POST form, include:
+
+```html
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+```
+
+Ensure `SECRET_KEY` is set in production via environment variable. The development fallback is random per process.
+
 ## CI/CD (Jenkins + SonarQube + Minikube)
 
 This repository includes a `Jenkinsfile` that automates the full pipeline:
@@ -317,7 +331,7 @@ kubectl rollout status deployment/aceest-fitness
 minikube service aceest-fitness --url
 ```
 
-#### Adjustments
+### Adjustments
 
 - Change `nodePort` in `k8s/service.yaml` if 30080 conflicts.
 - Add resource requests/limits for production.
