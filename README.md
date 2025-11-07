@@ -14,7 +14,7 @@ Converted from a Tkinter desktop GUI to a Flask web application.
 - Jinja2 templates
 - Simple JSON file persistence (`data.json` in project root)
 
-## Quick Start
+### Quick Start
 ```bash
 # From project root
 # (Ensure virtual environment already created; if not, create one)
