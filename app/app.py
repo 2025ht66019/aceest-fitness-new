@@ -1,8 +1,47 @@
 from flask import Flask, render_template_string, request, redirect, url_for
 from datetime import datetime
 from jinja2 import DictLoader
+import os
+from flask_wtf.csrf import CSRFProtect, generate_csrf
 
 app = Flask(__name__)
+
+# --- Security / CSRF configuration ---
+# Prefer externally supplied secret; otherwise generate ephemeral (dev/test only).
+secret = os.getenv('FLASK_SECRET_KEY') or os.getenv('SECRET_KEY')
+if not secret:
+  import secrets, logging
+  logging.getLogger(__name__).warning('No FLASK_SECRET_KEY set for mini app; generating ephemeral key (NOT for production).')
+  secret = secrets.token_hex(32)
+app.config['SECRET_KEY'] = secret
+app.config.setdefault('SESSION_COOKIE_SAMESITE', 'Lax')
+
+# Initialize CSRF extension; we flip enablement per request to ensure pytest imports before env vars set still honor test disabling.
+csrf = CSRFProtect(app)
+
+@app.before_request
+def _toggle_csrf_for_tests():  # pragma: no cover (simple flag logic)
+  """Disable CSRF only for automated test contexts.
+
+  Safe because test client does not execute browser-originating requests; re-enabled for all runtime traffic.
+  Conditions for disabling:
+    - app.testing flag
+    - PYTEST_CURRENT_TEST env present (pytest sets dynamically per test)
+    - DISABLE_CSRF_FOR_TESTS=1 manual override
+  Can be forced ON with FORCE_CSRF_IN_TESTS=1 for integration test scenarios.
+  """
+  if os.getenv('FORCE_CSRF_IN_TESTS'):
+    app.config['WTF_CSRF_ENABLED'] = True
+    return
+  if app.testing or os.getenv('PYTEST_CURRENT_TEST') or os.getenv('DISABLE_CSRF_FOR_TESTS'):
+    app.config['WTF_CSRF_ENABLED'] = False
+  else:
+    app.config['WTF_CSRF_ENABLED'] = True
+
+@app.context_processor
+def inject_csrf():  # pragma: no cover
+  # Provide token helper; if CSRF disabled this still returns a token string but validation won't run.
+  return {'csrf_token': generate_csrf}
 
 # Register in-memory templates for inheritance
 BASE_HTML = """
@@ -68,6 +107,7 @@ INDEX_HTML = """
   <div class="status {% if 'Error:' in status %}error{% endif %}">{{ status }}</div>
 {% endif %}
 <form method="post" action="{{ url_for('add_session') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
   <label for="category">Category</label>
   <select name="category" id="category">
     {% for c in workouts.keys() %}
